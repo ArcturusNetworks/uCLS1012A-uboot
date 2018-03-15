@@ -1,0 +1,30 @@
+if TARGET_UCLS1012A
+
+config SYS_BOARD
+	default "ucls1012a"
+
+config SYS_VENDOR
+	default "Arcturus"
+
+config SYS_SOC
+	default "fsl-layerscape"
+
+config SYS_CONFIG_NAME
+	default "UCLS1012A"
+
+config FIRM_ADDR1
+	hex "Firmware Env Base address 1"
+
+config FIRM_ADDR2
+	hex "Firmware Env Base address 2"
+
+config SUBTARGET_FRDM
+	bool "FRDM image"
+
+config SPI_FLASH_NOBAR
+	bool "NO BAR Warning"
+
+config SPI_FLASH_128M
+	bool "128MBytes QSPI"
+
+endif

@@ -1,0 +1,16 @@
+/*
+ * Device Tree file for Freescale Layerscape-1012A family SoC.
+ *
+ * Copyright (C) 2016, Freescale Semiconductor
+ *
+ * SPDX-License-Identifier:	GPL-2.0+
+ */
+
+/dts-v1/;
+#include "arc-ucls1012a.dtsi"
+
+/ {
+       chosen {
+               stdout-path = &duart0;
+       };
+};

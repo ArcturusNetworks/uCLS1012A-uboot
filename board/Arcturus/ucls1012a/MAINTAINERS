@@ -1,0 +1,6 @@
+UCP1020 BOARD
+M:	Oleksandr Zhadan and Michael Durrant <arcsupport@arcturusnetworks.com>
+S:	Maintained
+F:	board/Arcturus/ucls1012a/
+F:	include/configs/UCLS1012A.h
+F:	configs/UCLS1012A_defconfig
