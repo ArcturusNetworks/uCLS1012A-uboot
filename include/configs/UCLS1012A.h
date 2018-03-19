@@ -201,6 +201,55 @@
 /*
  * Partitions Configuration
  */
+#ifdef CONFIG_SUBTARGET_SOM
+#define ADDRESS_PART0 0x00A00000
+#define SIZE_PART0    0x07600000
+#define MAX_PARTS_NUM 1
+
+#undef CONFIG_EXTRA_ENV_SETTINGS
+#define CONFIG_EXTRA_ENV_SETTINGS				\
+	"ethaddr=" __stringify(CONFIG_ETHADDR) "\0"		\
+	"eth1addr=" __stringify(CONFIG_ETH1ADDR) "\0"		\
+	"initrd_high=0xffffffff\0"				\
+	"verify=no\0"						\
+	"hwconfig=fsl_ddr:bank_intlv=auto\0"			\
+	"loadaddr=0x80100000\0"					\
+	"part0base=" __stringify(ADDRESS_PART0) "\0"		\
+	"part0size=" __stringify(SIZE_PART0) "\0"		\
+	"image0size=" __stringify(SIZE_PART0) "\0"		\
+	"fdt_high=0xffffffffffffffff\0"				\
+	"initrd_high=0xffffffffffffffff\0"			\
+	"kargs_rootdev=root=/dev/mtdblock1\0"			\
+	"kargs_misc=rootfstype=cramfs\0"			\
+	"kernel_load=0x96000000\0"				\
+	"kargs=setenv bootargs console=$console,$baudrate "	\
+		"$kargs_rootdev $kargs_misc $kargs_parts\0"	\
+	"uboot= " __stringify(CONFIG_UBOOTPATH) "\0"		\
+	"ubootaddr=0x01000000\0"				\
+	"itest=tftp $kernel_load part0-000000.itb; "		\
+		"pfe stop; "					\
+		"run kargs; "					\
+		"bootm $kernel_load\0"				\
+	"iprogram=tftp part0-000000.itb; sf probe 0:0; "	\
+		"sf erase $part0base +$filesize; "		\
+		"sf write $loadaddr $part0base $filesize; "	\
+		"setenv image0size 0x$filesize; "		\
+		"saveenv\0"					\
+	"program0=sf probe 0:0; "				\
+		"sf erase $part0base +$image0size; "		\
+		"sf write $loadaddr $part0base $image0size\0"	\
+	"program_rcw=sf probe 0:0; "				\
+		"sf protect unlock 0 0x40000; "			\
+		"sf erase 0 +0x40000; "				\
+		"sf write $loadaddr 0 $filesize; "		\
+		"sf protect lock 0 0x40000\0"			\
+	"program_uboot=sf probe 0:0; "				\
+		"sf erase $partBbase +$filesize; "		\
+		"sf write $loadaddr $partBbase $filesize\0"	\
+	"console=ttyS0,115200n8\0"
+
+#else
+
 #define ADDRESS_PART0 0x00A00000
 #define SIZE_PART0    0x00800000
 #define ADDRESS_PART1 0x01200000
@@ -280,5 +329,7 @@
 		"sf erase $partBbase +$filesize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
 	"console=ttyS0,115200n8\0"
+
+#endif /* CONFIG_SUBTARGET_SOM */
 
 #endif /* __UCLS1012A_H__ */

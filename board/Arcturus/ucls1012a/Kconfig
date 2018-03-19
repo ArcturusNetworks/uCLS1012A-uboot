@@ -21,6 +21,9 @@ config FIRM_ADDR2
 config SUBTARGET_FRDM
 	bool "FRDM image"
 
+config SUBTARGET_SOM
+	bool "Base UCLS1012A-SOM image"
+
 config SPI_FLASH_NOBAR
 	bool "NO BAR Warning"
 
