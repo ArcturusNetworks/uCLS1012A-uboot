@@ -216,6 +216,10 @@
 	"loadaddr=0x80100000\0"					\
 	"part0base=" __stringify(ADDRESS_PART0) "\0"		\
 	"part0size=" __stringify(SIZE_PART0) "\0"		\
+	"partBbase=" __stringify(ADDRESS_PARTB) "\0"		\
+	"partBsize=" __stringify(SIZE_PARTB) "\0"		\
+	"partEbase=" __stringify(ADDRESS_PARTE) "\0"		\
+	"partEsize=" __stringify(SIZE_PARTE) "\0"		\
 	"image0size=" __stringify(SIZE_PART0) "\0"		\
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
