@@ -829,7 +829,7 @@ ifeq ($(CONFIG_DM_I2C_COMPAT),y)
 	@echo "before sending patches to the mailing list."
 	@echo "===================================================="
 endif
-	@tclsh tools/byte_swap.tcl u-boot-dtb.bin u-boot-qspi.bin 8
+	@tools/byte_swap64 u-boot-dtb.bin u-boot-qspi.bin
 	@mv -f u-boot-qspi.bin u-boot.bin
 
 PHONY += dtbs
