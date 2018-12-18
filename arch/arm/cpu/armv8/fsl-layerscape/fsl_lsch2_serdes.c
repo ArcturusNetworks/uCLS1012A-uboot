@@ -108,10 +108,15 @@ void serdes_init(u32 sd, u32 sd_addr, u32 sd_prctl_mask, u32 sd_prctl_shift,
 void fsl_serdes_init(void)
 {
 #ifdef CONFIG_SYS_FSL_SRDS_1
-	serdes_init(FSL_SRDS_1,
+	static int serdes_initiated = 0;
+
+	if (!serdes_initiated) {
+		serdes_init(FSL_SRDS_1,
 		    CONFIG_SYS_FSL_SERDES_ADDR,
 		    FSL_CHASSIS2_RCWSR4_SRDS1_PRTCL_MASK,
 		    FSL_CHASSIS2_RCWSR4_SRDS1_PRTCL_SHIFT,
 		    serdes1_prtcl_map);
+		serdes_initiated = 1;
+	}
 #endif
 }

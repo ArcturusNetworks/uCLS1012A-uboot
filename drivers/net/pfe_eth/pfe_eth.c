@@ -152,7 +152,7 @@ static int ls1012a_eth_init(struct eth_device *dev, bd_t *bd)
 		return -1;
 	}
 	speed = priv->phydev->speed;
-	printf("Speed detected %x\n", speed);
+	printf("Speed detected %d Mbps\n", speed);
 	if (priv->phydev->duplex == DUPLEX_HALF) {
 		printf("Half duplex not supported\n");
 		return -1;

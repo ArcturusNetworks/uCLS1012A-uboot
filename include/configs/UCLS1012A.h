@@ -126,6 +126,10 @@
 #define CONFIG_SYS_SCSI_MAX_LUN			1
 #define CONFIG_SYS_SCSI_MAX_DEVICE		(CONFIG_SYS_SCSI_MAX_SCSI_ID * \
 						CONFIG_SYS_SCSI_MAX_LUN)
+
+#define CONFIG_PCI		/* Enable PCI/PCIE */
+#define CONFIG_PCI_SCAN_SHOW
+#define CONFIG_SYS_EARLY_PCI_INIT
 #define CONFIG_PCIE1		/* PCIE controller 1 */
 #define CONFIG_PCIE_LAYERSCAPE	/* Use common FSL Layerscape PCIe code */
 #define FSL_PCIE_COMPAT "fsl,ls1043a-pcie"
@@ -239,38 +243,43 @@
 		"run kargs; "					\
 		"bootm $kernel_load\0"				\
 	"iprogram=tftp part0-000000.itb; sf probe 0:0; "	\
-		"sf erase $part0base +$filesize; "		\
+		"sf erase $part0base +$part0size; "		\
 		"sf write $loadaddr $part0base $filesize; "	\
 		"setenv image0size 0x$filesize; "		\
 		"saveenv\0"					\
 	"program0=sf probe 0:0; "				\
-		"sf erase $part0base +$image0size; "		\
-		"sf write $loadaddr $part0base $image0size\0"	\
+		"sf erase $part0base +$part0size; "		\
+		"sf write $loadaddr $part0base $filesize; "	\
+		"setenv image0size 0x$filesize; "		\
+		"saveenv\0"					\
 	"program_rcw=sf probe 0:0; "				\
 		"sf protect unlock 0 0x40000; "			\
 		"sf erase 0 +0x40000; "				\
 		"sf write $loadaddr 0 $filesize; "		\
 		"sf protect lock 0 0x40000\0"			\
 	"program_uboot=sf probe 0:0; "				\
-		"sf erase $partBbase +$filesize; "		\
+		"sf erase $partBbase +$partBsize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
 	"console=ttyS0,115200n8\0"
 
 #else
 
-#define ADDRESS_PART0 0x00A00000
-#define SIZE_PART0    0x00800000
 #define ADDRESS_PART1 0x01200000
-#define SIZE_PART1    0x02580000
-#define ADDRESS_PART2 0x03780000
 #define SIZE_PART2    0x00080000
-#define ADDRESS_PART3 0x03800000
-#ifdef CONFIG_SPI_FLASH_128M
-#define SIZE_PART3    0x04800000
-#else
 #define SIZE_PART3    0x00800000
+
+#ifdef CONFIG_SPI_FLASH_128M
+	#define SIZE_PART1    0x06580000
+	#define ADDRESS_PART2 0x07780000
+	#define ADDRESS_PART3 0x07800000
+#else
+	#define SIZE_PART1    0x02580000
+	#define ADDRESS_PART2 0x03780000
+	#define ADDRESS_PART3 0x03800000
 #endif
 
+#define ADDRESS_PART0 0x00A00000
+#define SIZE_PART0    0x00800000
 #define ADDRESS_PARTB 0x100000
 #define SIZE_PARTB    0x100000
 #define ADDRESS_PARTE 0x200000	/* CONFIG_ENV_OFFSET from ls1012a_common.h */
@@ -317,24 +326,28 @@
 		"setenv image0size 0x$filesize; "		\
 		"saveenv\0"					\
 	"program0=sf probe 0:0; "				\
-		"sf erase $part0base +$image0size; "		\
-		"sf write $loadaddr $part0base $image0size\0"	\
+		"sf erase $part0base +$part0size; "		\
+		"sf write $loadaddr $part0base $filesize; "	\
+		"setenv image0size 0x$filesize; "		\
+		"saveenv\0"					\
 	"program1=sf probe 0:0; "				\
-		"sf erase $part1base +$filesize; "		\
+		"sf erase $part1base +$part1size; "		\
 		"sf write $loadaddr $part1base $filesize\0"	\
 	"program2=sf probe 0:0; "				\
-		"sf erase $part2base +$filesize; "		\
+		"sf erase $part2base +$part2size; "		\
 		"sf write $loadaddr $part2base $filesize\0"	\
 	"program3=sf probe 0:0; "				\
 		"sf erase $part3base +$part3size; "		\
 		"sf write $loadaddr $part3base $filesize\0"	\
+	"format3=sf probe 0:0; "				\
+		"sf erase $part3base +$part3size\0"		\
 	"program_rcw=sf probe 0:0; "				\
 		"sf protect unlock 0 0x40000; "			\
 		"sf erase 0 +0x40000; "				\
 		"sf write $loadaddr 0 $filesize; "		\
 		"sf protect lock 0 0x40000\0"			\
 	"program_uboot=sf probe 0:0; "				\
-		"sf erase $partBbase +$filesize; "		\
+		"sf erase $partBbase +$partBsize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
 	"console=ttyS0,115200n8\0"
 

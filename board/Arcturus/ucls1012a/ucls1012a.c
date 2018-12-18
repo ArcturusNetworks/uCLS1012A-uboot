@@ -73,12 +73,13 @@ static void test_gpio(void)
 }
 #endif
 
-#define MASK_CPU_RST	0x00000002
+#define MASK_CPU_RST	0x00000003
 void reset_misc(void)
 {
 	ccsr_gpio_t *pgpio = (void *)(CONFIG_SYS_GPIO1_ADDR);
 
-	/* Set direction output for GPIO1_30 (LS1012A reset) */
+	/* Set direction output for GPIO1_30 (LS1012A rev1.2 cpu reset ) */
+	/* Set direction output for GPIO1_31 (LS1012A rev1.4 cpu reset) */
 	setbits_be32(&pgpio->gpdir, MASK_CPU_RST);
 
 	/* Pull CPU part Reset UP */
@@ -246,6 +247,8 @@ int board_init(void)
 	if (ppa_entry)
 		ppa_init_entry((void *)ppa_entry);
 #endif
+	fsl_serdes_init();
+
 	return 0;
 }
 
