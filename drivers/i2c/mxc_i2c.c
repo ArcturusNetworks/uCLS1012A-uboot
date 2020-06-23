@@ -186,6 +186,41 @@ static int bus_i2c_set_bus_speed(struct mxc_i2c_bus *i2c_bus, int speed)
 #define ST_BUS_BUSY (I2SR_IBB | (I2SR_IBB << 8))
 #define ST_IIF (I2SR_IIF | (I2SR_IIF << 8))
 
+#ifdef CONFIG_TARGET_UCLS1012A
+/*
+ * Try to fix Bug 6282:	P242.426 LS1012a-VoIP:
+ * Occasional SIGSEGV occurs when testing devices.  OZh.
+ */
+
+static int do_i2c_recovery(ulong base, int reg_shift)
+{
+#if defined(CONFIG_DM_I2C)
+	struct udevice *bus;
+#endif
+	unsigned sr = readb(base + (I2SR << reg_shift));
+
+	if (sr & (I2SR_IAL | I2SR_IIF)) {
+		writeb((sr | I2SR_IAL | I2SR_IIF), base +
+				       (I2SR << reg_shift));
+#if defined(CONFIG_DM_I2C)
+		if (i2c_get_cur_bus(&bus))
+			return CMD_RET_FAILURE;
+		if (i2c_deblock(bus)) {
+			printf("Error: Not supported by the driver\n");
+			return CMD_RET_FAILURE;
+		}
+#elif defined(CONFIG_SYS_I2C)
+		i2c_init(I2C_ADAP->speed, I2C_ADAP->slaveaddr);
+#else
+		i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
+#endif
+	}
+	do_reset(NULL, 0, 0, NULL);
+	/* Should not be here */
+	return 0;
+}
+#endif
+
 static int wait_for_sr_state(struct mxc_i2c_bus *i2c_bus, unsigned state)
 {
 	unsigned sr;
@@ -197,10 +232,13 @@ static int wait_for_sr_state(struct mxc_i2c_bus *i2c_bus, unsigned state)
 	for (;;) {
 		sr = readb(base + (I2SR << reg_shift));
 		if (sr & I2SR_IAL) {
-			if (quirk)
+			if (quirk) {
 				writeb(sr | I2SR_IAL, base +
 				       (I2SR << reg_shift));
-			else
+#ifdef CONFIG_TARGET_UCLS1012A
+				do_i2c_recovery(base, reg_shift);
+#endif
+			} else
 				writeb(sr & ~I2SR_IAL, base +
 				       (I2SR << reg_shift));
 			printf("%s: Arbitration lost sr=%x cr=%x state=%x\n",

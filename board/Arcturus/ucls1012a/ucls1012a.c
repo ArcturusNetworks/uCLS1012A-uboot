@@ -1,5 +1,5 @@
 /*
- * Copyright 2016, 2017 Arcturus Networks, Inc.
+ * Copyright 2016-2020 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/ucls1012a/
  * based on board/freescale/ls1012afrdm/ls1012afrdm.c
  * original copyright follows:
@@ -104,12 +104,7 @@ static void set_wait_for_bits_clear(void *ptr, u32 value, u32 bits)
 
 int checkboard(void)
 {
-#ifdef CONFIG_SUBTARGET_FRDM
-	puts("Board: LS1012AFRDM ");
-#else
-	printf("Board: uCLS1012A-SOM Rev.1.1\n\r");
-#endif
-
+	printf("Board: uCLS1012A-SOM Rev.1.6\n\r");
 	return 0;
 }
 

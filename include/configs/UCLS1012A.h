@@ -244,19 +244,15 @@
 		"bootm $kernel_load\0"				\
 	"iprogram=tftp part0-000000.itb; sf probe 0:0; "	\
 		"sf erase $part0base +$part0size; "		\
-		"sf write $loadaddr $part0base $filesize; "	\
-		"setenv image0size 0x$filesize; "		\
-		"saveenv\0"					\
+		"sf write $loadaddr $part0base $filesize\0"	\
 	"program0=sf probe 0:0; "				\
 		"sf erase $part0base +$part0size; "		\
-		"sf write $loadaddr $part0base $filesize; "	\
-		"setenv image0size 0x$filesize; "		\
-		"saveenv\0"					\
+		"sf write $loadaddr $part0base $filesize\0"	\
 	"program_rcw=sf probe 0:0; "				\
-		"sf protect unlock 0 0x40000; "			\
-		"sf erase 0 +0x40000; "				\
+		"sf protect unlock 0 0x10000; "			\
+		"sf erase 0 +1; "				\
 		"sf write $loadaddr 0 $filesize; "		\
-		"sf protect lock 0 0x40000\0"			\
+		"sf protect lock 0 0x10000\0"			\
 	"program_uboot=sf probe 0:0; "				\
 		"sf erase $partBbase +$partBsize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
@@ -322,14 +318,10 @@
 		"bootm $kernel_load\0"				\
 	"iprogram=tftp part0-000000.itb; sf probe 0:0; "	\
 		"sf erase $part0base +$filesize; "		\
-		"sf write $loadaddr $part0base $filesize; "	\
-		"setenv image0size 0x$filesize; "		\
-		"saveenv\0"					\
+		"sf write $loadaddr $part0base $filesize\0"	\
 	"program0=sf probe 0:0; "				\
 		"sf erase $part0base +$part0size; "		\
-		"sf write $loadaddr $part0base $filesize; "	\
-		"setenv image0size 0x$filesize; "		\
-		"saveenv\0"					\
+		"sf write $loadaddr $part0base $filesize\0"	\
 	"program1=sf probe 0:0; "				\
 		"sf erase $part1base +$part1size; "		\
 		"sf write $loadaddr $part1base $filesize\0"	\
@@ -342,10 +334,10 @@
 	"format3=sf probe 0:0; "				\
 		"sf erase $part3base +$part3size\0"		\
 	"program_rcw=sf probe 0:0; "				\
-		"sf protect unlock 0 0x40000; "			\
-		"sf erase 0 +0x40000; "				\
+		"sf protect unlock 0 0x10000; "			\
+		"sf erase 0 +1; "				\
 		"sf write $loadaddr 0 $filesize; "		\
-		"sf protect lock 0 0x40000\0"			\
+		"sf protect lock 0 0x10000\0"			\
 	"program_uboot=sf probe 0:0; "				\
 		"sf erase $partBbase +$partBsize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
