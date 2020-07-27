@@ -1,7 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright 2008-2014 Freescale Semiconductor, Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  *
  */
 
@@ -38,6 +37,8 @@
 #define JQ_DEQ_ERR		-1
 #define JQ_DEQ_TO_ERR		-2
 #define JQ_ENQ_ERR		-3
+
+#define RNG4_MAX_HANDLES	2
 
 struct op_ring {
 	phys_addr_t desc;
@@ -90,6 +91,9 @@ struct jobring {
 	/* This ring can be on the stack */
 	struct jr_info info[JR_SIZE];
 	struct op_ring *output_ring;
+	/* Offset in CCSR to the SEC engine to which this JR belongs */
+	uint32_t sec_offset;
+
 };
 
 struct result {

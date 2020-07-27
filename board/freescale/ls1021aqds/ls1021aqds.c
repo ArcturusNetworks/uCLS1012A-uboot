@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2014 Freescale Semiconductor, Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
+ * Copyright 2019 NXP
  */
 
 #include <common.h>
@@ -10,10 +10,8 @@
 #include <asm/arch/immap_ls102xa.h>
 #include <asm/arch/clock.h>
 #include <asm/arch/fsl_serdes.h>
-#include <asm/arch/ls102xa_stream_id.h>
 #include <asm/arch/ls102xa_soc.h>
 #include <asm/arch/ls102xa_devdis.h>
-#include <asm/arch/ls102xa_sata.h>
 #include <hwconfig.h>
 #include <mmc.h>
 #include <fsl_csu.h>
@@ -23,7 +21,7 @@
 #include <spl.h>
 #include <fsl_devdis.h>
 #include <fsl_validate.h>
-
+#include <fsl_ddr.h>
 #include "../common/sleep.h"
 #include "../common/qixis.h"
 #include "ls1021aqds_qixis.h"
@@ -39,8 +37,6 @@
 
 #define SET_SDHC_MUX_SEL(reg, value)	((reg & 0x0f) | value)
 #define SET_EC_MUX_SEL(reg, value)	((reg & 0xf0) | value)
-DECLARE_GLOBAL_DATA_PTR;
-
 enum {
 	MUX_TYPE_CAN,
 	MUX_TYPE_IIC2,
@@ -61,7 +57,7 @@ enum {
 
 int checkboard(void)
 {
-#ifndef CONFIG_QSPI_BOOT
+#if !defined(CONFIG_QSPI_BOOT) && !defined(CONFIG_SD_BOOT_QSPI)
 	char buf[64];
 #endif
 #if !defined(CONFIG_SD_BOOT) && !defined(CONFIG_QSPI_BOOT)
@@ -90,7 +86,7 @@ int checkboard(void)
 		printf("invalid setting of SW%u\n", QIXIS_LBMAP_SWITCH);
 #endif
 
-#ifndef CONFIG_QSPI_BOOT
+#if !defined(CONFIG_QSPI_BOOT) && !defined(CONFIG_SD_BOOT_QSPI)
 	printf("Sys ID:0x%02x, Sys Ver: 0x%02x\n",
 	       QIXIS_READ(id), QIXIS_READ(arch));
 
@@ -142,11 +138,23 @@ unsigned long get_board_ddr_clk(void)
 	return 66666666;
 }
 
-int select_i2c_ch_pca9547(u8 ch)
+int select_i2c_ch_pca9547(u8 ch, int bus_num)
 {
 	int ret;
+#ifdef CONFIG_DM_I2C
+	struct udevice *dev;
 
+	ret = i2c_get_chip_for_busnum(bus_num, I2C_MUX_PCA_ADDR_PRI,
+				      1, &dev);
+	if (ret) {
+		printf("%s: Cannot find udev for a bus %d\n", __func__,
+		       bus_num);
+		return ret;
+	}
+	ret = dm_i2c_write(dev, 0, &ch, 1);
+#else
 	ret = i2c_write(I2C_MUX_PCA_ADDR_PRI, 0, 1, &ch, 1);
+#endif
 	if (ret) {
 		puts("PCA: failed to select proper channel\n");
 		return ret;
@@ -161,11 +169,11 @@ int dram_init(void)
 	 * When resuming from deep sleep, the I2C channel may not be
 	 * in the default channel. So, switch to the default channel
 	 * before accessing DDR SPD.
+	 *
+	 * PCA9547(0x77) mount on I2C1 bus
 	 */
-	select_i2c_ch_pca9547(I2C_MUX_CH_DEFAULT);
-	gd->ram_size = initdram(0);
-
-	return 0;
+	select_i2c_ch_pca9547(I2C_MUX_CH_DEFAULT, 0);
+	return fsl_initdram();
 }
 
 #ifdef CONFIG_FSL_ESDHC
@@ -207,9 +215,6 @@ int board_early_init_f(void)
 #ifdef CONFIG_SPL_BUILD
 void board_init_f(ulong dummy)
 {
-	struct ccsr_cci400 *cci = (struct ccsr_cci400 *)CONFIG_SYS_CCI400_ADDR;
-	unsigned int major;
-
 #ifdef CONFIG_NAND_BOOT
 	struct ccsr_gur __iomem *gur = (void *)CONFIG_SYS_FSL_GUTS_ADDR;
 	u32 porsr1, pinctl;
@@ -246,10 +251,7 @@ void board_init_f(ulong dummy)
 	i2c_init_all();
 #endif
 
-	major = get_soc_major_rev();
-	if (major == SOC_MAJOR_VER_1_0)
-		out_le32(&cci->ctrl_ord, CCI400_CTRLORD_TERM_BARRIER);
-
+	timer_init();
 	dram_init();
 
 	/* Allow OCRAM access permission as R/W */
@@ -367,9 +369,6 @@ int config_serdes_mux(void)
 #ifdef CONFIG_BOARD_LATE_INIT
 int board_late_init(void)
 {
-#ifdef CONFIG_SCSI_AHCI_PLAT
-	ls1021a_sata_init();
-#endif
 #ifdef CONFIG_CHAIN_OF_TRUST
 	fsl_setenv_chain_of_trust();
 #endif
@@ -426,69 +425,23 @@ int misc_init_r(void)
 	return 0;
 }
 
-struct liodn_id_table sec_liodn_tbl[] = {
-	SET_SEC_JR_LIODN_ENTRY(0, 0x10, 0x10),
-	SET_SEC_JR_LIODN_ENTRY(1, 0x10, 0x10),
-	SET_SEC_JR_LIODN_ENTRY(2, 0x10, 0x10),
-	SET_SEC_JR_LIODN_ENTRY(3, 0x10, 0x10),
-	SET_SEC_RTIC_LIODN_ENTRY(a, 0x10),
-	SET_SEC_RTIC_LIODN_ENTRY(b, 0x10),
-	SET_SEC_RTIC_LIODN_ENTRY(c, 0x10),
-	SET_SEC_RTIC_LIODN_ENTRY(d, 0x10),
-	SET_SEC_DECO_LIODN_ENTRY(0, 0x10, 0x10),
-	SET_SEC_DECO_LIODN_ENTRY(1, 0x10, 0x10),
-	SET_SEC_DECO_LIODN_ENTRY(2, 0x10, 0x10),
-	SET_SEC_DECO_LIODN_ENTRY(3, 0x10, 0x10),
-	SET_SEC_DECO_LIODN_ENTRY(4, 0x10, 0x10),
-	SET_SEC_DECO_LIODN_ENTRY(5, 0x10, 0x10),
-	SET_SEC_DECO_LIODN_ENTRY(6, 0x10, 0x10),
-	SET_SEC_DECO_LIODN_ENTRY(7, 0x10, 0x10),
-};
-
-struct smmu_stream_id dev_stream_id[] = {
-	{ 0x100, 0x01, "ETSEC MAC1" },
-	{ 0x104, 0x02, "ETSEC MAC2" },
-	{ 0x108, 0x03, "ETSEC MAC3" },
-	{ 0x10c, 0x04, "PEX1" },
-	{ 0x110, 0x05, "PEX2" },
-	{ 0x114, 0x06, "qDMA" },
-	{ 0x118, 0x07, "SATA" },
-	{ 0x11c, 0x08, "USB3" },
-	{ 0x120, 0x09, "QE" },
-	{ 0x124, 0x0a, "eSDHC" },
-	{ 0x128, 0x0b, "eMA" },
-	{ 0x14c, 0x0c, "2D-ACE" },
-	{ 0x150, 0x0d, "USB2" },
-	{ 0x18c, 0x0e, "DEBUG" },
-};
-
 int board_init(void)
 {
-	struct ccsr_cci400 *cci = (struct ccsr_cci400 *)CONFIG_SYS_CCI400_ADDR;
-	unsigned int major;
+#ifdef CONFIG_SYS_FSL_ERRATUM_A010315
+	erratum_a010315();
+#endif
+#ifdef CONFIG_SYS_FSL_ERRATUM_A009942
+	erratum_a009942_check_cpo();
+#endif
 
-	major = get_soc_major_rev();
-	if (major == SOC_MAJOR_VER_1_0) {
-		/* Set CCI-400 control override register to
-		 * enable barrier transaction */
-		out_le32(&cci->ctrl_ord, CCI400_CTRLORD_EN_BARRIER);
-	}
-
-	select_i2c_ch_pca9547(I2C_MUX_CH_DEFAULT);
+	select_i2c_ch_pca9547(I2C_MUX_CH_DEFAULT, 0);
 
 #ifndef CONFIG_SYS_FSL_NO_SERDES
 	fsl_serdes_init();
 	config_serdes_mux();
 #endif
 
-	ls1021x_config_caam_stream_id(sec_liodn_tbl,
-				      ARRAY_SIZE(sec_liodn_tbl));
-	ls102xa_config_smmu_stream_id(dev_stream_id,
-				      ARRAY_SIZE(dev_stream_id));
-
-#ifdef CONFIG_LAYERSCAPE_NS_ACCESS
-	enable_layerscape_ns_access();
-#endif
+	ls102xa_smmu_stream_id_init();
 
 #ifdef CONFIG_U_QE
 	u_qe_init();
@@ -500,17 +453,6 @@ int board_init(void)
 #if defined(CONFIG_DEEP_SLEEP)
 void board_sleep_prepare(void)
 {
-	struct ccsr_cci400 __iomem *cci = (void *)CONFIG_SYS_CCI400_ADDR;
-	unsigned int major;
-
-	major = get_soc_major_rev();
-	if (major == SOC_MAJOR_VER_1_0) {
-		/* Set CCI-400 control override register to
-		 * enable barrier transaction */
-		out_le32(&cci->ctrl_ord, CCI400_CTRLORD_EN_BARRIER);
-	}
-
-
 #ifdef CONFIG_LAYERSCAPE_NS_ACCESS
 	enable_layerscape_ns_access();
 #endif

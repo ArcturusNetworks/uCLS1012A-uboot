@@ -1,11 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2011-2015 Freescale Semiconductor, Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 #include <errno.h>
 #include <common.h>
 #include <asm/io.h>
+#include <fdt_support.h>
 #include <fsl_mdio.h>
 #ifdef CONFIG_FSL_LAYERSCAPE
 #include <asm/arch/fsl_serdes.h>
@@ -124,32 +124,6 @@ static int fm_port_to_index(enum fm_port port)
 
 	return -1;
 }
-
-#ifdef CONFIG_SYS_FSL_ERRATUM_A007273
-
-/* FMAN soft reset is not finished properly if at least one of the
- * Ethernet MAC clocks is disabled by setting the corresponding bit
- * of the DCFG_CCSR_DEVDISR2 register, so we don't disable any
- * MACs, add a soft reet in u-boot when transfer to kernel to make
- * sure FMan is resetted.
- * */
-void fm_erratum_007273(void)
-{
-	struct ccsr_fman *reg;
-
-	reg = (void *)CONFIG_SYS_FSL_FM1_ADDR;
-	/* Reset FMan */
-	out_be32(&reg->fm_fpm.fmrstc, FPM_RSTC_FM_RESET);
-	udelay(100);
-
-#if (CONFIG_SYS_NUM_FMAN == 2)
-	reg = (void *)CONFIG_SYS_FSL_FM2_ADDR;
-	/* Reset FMan */
-	out_be32(&reg->fm_fpm.fmrstc, FPM_RSTC_FM_RESET);
-	udelay(100);
-#endif
-}
-#endif
 
 /*
  * Determine if an interface is actually active based on HW config
@@ -354,7 +328,8 @@ void fdt_fixup_fman_ethernet(void *blob)
 				ft_fixup_port(blob, &fm_info[i],
 					      "fsl,fman-1g-mac");
 		} else {
-			if (ft_fixup_port(blob, &fm_info[i], "fsl,fman-tgec"))
+			if (ft_fixup_port(blob, &fm_info[i], "fsl,fman-xgec") &&
+			    ft_fixup_port(blob, &fm_info[i], "fsl,fman-tgec"))
 				ft_fixup_port(blob, &fm_info[i],
 					      "fsl,fman-10g-mac");
 		}

@@ -1,123 +1,32 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2014-2015 Freescale Semiconductor, Inc.
- * Copyright 2016 NXP Semiconductor
- *
- * SPDX-License-Identifier:	GPL-2.0+
+ * Copyright 2016 NXP Semiconductor, Inc.
  */
 
 #include <common.h>
-#include <libfdt.h>
-#include <fdt_support.h>
-#include <linux/sizes.h>
-#include <linux/kernel.h>
+#include <asm/psci.h>
+#include <asm/system.h>
+#include <asm/armv8/sec_firmware.h>
 
-DECLARE_GLOBAL_DATA_PTR;
-
-#if defined(CONFIG_ARMV8_PSCI)
-__weak unsigned int sec_firmware_support_psci_version(void)
-{
-	/* return version 0.2 by default */
-	return 0x0002;
-}
-
-static int cpu_update_dt_psci(void *fdt)
-{
-	int nodeoff;
-	unsigned int psci_ver;
-	char *psci_compt;
-	int tmp;
-
-	nodeoff = fdt_path_offset(fdt, "/cpus");
-	if (nodeoff < 0) {
-		printf("couldn't find /cpus\n");
-		return nodeoff;
-	}
-
-	/* add 'enable-method = "psci"' to each cpu node */
-	for (tmp = fdt_first_subnode(fdt, nodeoff);
-	     tmp >= 0;
-	     tmp = fdt_next_subnode(fdt, tmp)) {
-		const struct fdt_property *prop;
-		int len;
-
-		prop = fdt_get_property(fdt, tmp, "device_type", &len);
-		if (!prop)
-			continue;
-		if (len < 4)
-			continue;
-		if (strcmp(prop->data, "cpu"))
-			continue;
-
-		/*
-		 * Not checking rv here, our approach is to skip over errors in
-		 * individual cpu nodes, hopefully some of the nodes are
-		 * processed correctly and those will boot
-		 */
-		fdt_setprop_string(fdt, tmp, "enable-method", "psci");
-	}
-
-	/*
-	 * The PSCI node might be called "/psci" or might be called something
-	 * else but contain either of the compatible strings
-	 * "arm,psci"/"arm,psci-0.2"
-	 */
-	nodeoff = fdt_path_offset(fdt, "/psci");
-	if (nodeoff >= 0)
-		goto init_psci_node;
-
-	nodeoff = fdt_node_offset_by_compatible(fdt, -1, "arm,psci");
-	if (nodeoff >= 0)
-		goto init_psci_node;
-
-	nodeoff = fdt_node_offset_by_compatible(fdt, -1, "arm,psci-0.2");
-	if (nodeoff >= 0)
-		goto init_psci_node;
-
-	nodeoff = fdt_node_offset_by_compatible(fdt, -1, "arm,psci-1.0");
-	if (nodeoff >= 0)
-		goto init_psci_node;
-
-	nodeoff = fdt_path_offset(fdt, "/");
-	if (nodeoff < 0)
-		return nodeoff;
-
-	nodeoff = fdt_add_subnode(fdt, nodeoff, "psci");
-	if (nodeoff < 0)
-		return nodeoff;
-
-init_psci_node:
-	psci_ver = sec_firmware_support_psci_version();
-	switch (psci_ver) {
-	case 0x0100:
-		psci_compt = "arm,psci-1.0";
-		break;
-	case 0x0002:
-		psci_compt = "arm,psci-0.2";
-		break;
-	case 0x0001:
-		psci_compt = "arm,psci";
-		break;
-	default:
-		psci_compt = "arm,psci-0.2";
-		break;
-	}
-
-	tmp = fdt_setprop_string(fdt, nodeoff, "compatible", psci_compt);
-	if (tmp)
-		return tmp;
-
-	tmp = fdt_setprop_string(fdt, nodeoff, "method", "smc");
-	if (tmp)
-		return tmp;
-
-	return 0;
-}
-#endif
-
+#ifdef CONFIG_ARMV8_SEC_FIRMWARE_SUPPORT
 int psci_update_dt(void *fdt)
 {
-#if defined(CONFIG_ARMV8_PSCI)
-	cpu_update_dt_psci(fdt);
+	/*
+	 * If the PSCI in SEC Firmware didn't work, avoid to update the
+	 * device node of PSCI. But still return 0 instead of an error
+	 * number to support detecting PSCI dynamically and then switching
+	 * the SMP boot method between PSCI and spin-table.
+	 */
+	if (sec_firmware_support_psci_version() == PSCI_INVALID_VER)
+		return 0;
+	fdt_psci(fdt);
+
+#if defined(CONFIG_ARMV8_PSCI) && !defined(CONFIG_ARMV8_SECURE_BASE)
+	/* secure code lives in RAM, keep it alive */
+	fdt_add_mem_rsv(fdt, (unsigned long)__secure_start,
+			__secure_end - __secure_start);
 #endif
+
 	return 0;
 }
+#endif

@@ -12,22 +12,72 @@ config SYS_SOC
 config SYS_CONFIG_NAME
 	default "UCLS1012A"
 
-config FIRM_ADDR1
-	hex "Firmware Env Base address 1"
+choice
+	prompt "SubTarget image select"
 
-config FIRM_ADDR2
-	hex "Firmware Env Base address 2"
-
-config SUBTARGET_FRDM
-	bool "FRDM image"
+config SUBTARGET_SOM314
+	bool "314 SOM Host"
 
 config SUBTARGET_SOM
 	bool "Base UCLS1012A-SOM image"
 
-config SPI_FLASH_NOBAR
-	bool "NO BAR Warning"
+config SUBTARGET_DONGLE
+	bool "UCLS1012A-SOM image for Programming Dongle"
+
+endchoice
 
 config SPI_FLASH_128M
 	bool "128MBytes QSPI"
+	def_bool y
+
+config HX3_HUB_INIT
+	bool "Init HX3 USB HUB"
+
+config SYS_LS_PFE_FW_ADDR
+	hex "Flash address of PFE firmware"
+	default 0x40020000
+
+config FIRM_ADDR1
+	hex "Firmware Env Base address 1"
+	default 0x1C0000
+
+config FIRM_ADDR2
+	hex "Firmware Env Base address 2"
+	default 0x1D0000
+
+config SYS_LS_PPA_FW_ADDR
+	hex "PPA Firmware Addr"
+	default 0x40060000
+
+config SYS_LS_PPA_ESBC_ADDR
+	hex "PPA Firmware HDR Addr"
+	default 0x401f4000
+
+config SYS_LS_PFE_ESBC_ADDR
+	hex "PFE Firmware HDR Addr"
+	default 0x401f8000
+
+config BOARD_SPECIFIC_OPTIONS # dummy
+	def_bool y
+	select PHYLIB
+	imply PHY_ATHEROS
+
+config DDR_PFE_PHYS_BASEADDR
+	hex "PFE DDR physical base address"
+	default 0x03800000
+
+config DDR_PFE_BASEADDR
+	hex "PFE DDR base address"
+	default 0x83800000
+
+config PFE_EMAC1_PHY_ADDR
+	hex "PFE DDR base address"
+	default 0x4
+
+config PFE_EMAC2_PHY_ADDR
+	hex "PFE DDR base address"
+	default 0x5
+
+source "board/freescale/common/Kconfig"
 
 endif

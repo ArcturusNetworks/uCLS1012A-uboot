@@ -1,7 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright 2016 Freescale Semiconductor, Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef __LS1012ARDB_H__
@@ -9,82 +8,72 @@
 
 #include "ls1012a_common.h"
 
-#ifndef CONFIG_SECURE_BOOT
-#if defined(CONFIG_FSL_LS_PPA)
-#define CONFIG_ARMV8_PSCI
-#define CONFIG_SYS_LS_PPA_DRAM_BLOCK_MIN_SIZE	(1UL * 1024 * 1024)
-
-#define CONFIG_SYS_LS_PPA_FW_IN_XIP
-#ifdef CONFIG_SYS_LS_PPA_FW_IN_XIP
-#define CONFIG_SYS_LS_PPA_FW_ADDR	0x40500000
-#endif
-#endif
-#endif
-
+/* DDR */
 #define CONFIG_DIMM_SLOTS_PER_CTLR	1
 #define CONFIG_CHIP_SELECTS_PER_CTRL	1
-#define CONFIG_NR_DRAM_BANKS		2
-
+#define CONFIG_SYS_SDRAM_SIZE		0x20000000
+#define CONFIG_CHIP_SELECTS_PER_CTRL	1
 #define CONFIG_CMD_MEMINFO
-#define CONFIG_CMD_MEMTEST
 #define CONFIG_SYS_MEMTEST_START	0x80000000
 #define CONFIG_SYS_MEMTEST_END		0x9fffffff
 
-#ifdef CONFIG_FSL_PPFE
-#define EMAC1_PHY_ADDR          0x2
-#define EMAC2_PHY_ADDR          0x1
-#define CONFIG_PHYLIB
-#define CONFIG_PHY_REALTEK
+#ifndef CONFIG_SPL_BUILD
+#undef BOOT_TARGET_DEVICES
+#define BOOT_TARGET_DEVICES(func) \
+	func(USB, usb, 0)
 #endif
-/*
-* USB
-*/
-#define CONFIG_HAS_FSL_XHCI_USB
-
-#ifdef CONFIG_HAS_FSL_XHCI_USB
-#define CONFIG_USB_XHCI
-#define CONFIG_USB_XHCI_FSL
-#define CONFIG_USB_XHCI_DWC3
-#define CONFIG_USB_MAX_CONTROLLER_COUNT         1
-#define CONFIG_SYS_USB_XHCI_MAX_ROOT_PORTS      2
-#define CONFIG_CMD_USB
-#define CONFIG_USB_STORAGE
-
-#define CONFIG_USB_DWC3
-#define CONFIG_USB_DWC3_GADGET
-
-#define CONFIG_USB_GADGET
-#define CONFIG_USB_FUNCTION_MASS_STORAGE
-#define CONFIG_USB_GADGET_DOWNLOAD
-#define CONFIG_USB_GADGET_VBUS_DRAW 2
-#define CONFIG_G_DNL_MANUFACTURER "NXP Semiconductor"
-#define CONFIG_G_DNL_VENDOR_NUM 0x1234
-#define CONFIG_G_DNL_PRODUCT_NUM 0x1234
-#define CONFIG_USB_GADGET_DUALSPEED
-
-/* USB Gadget ums command */
-#define CONFIG_CMD_USB_MASS_STORAGE
-#endif
-
-#define CONFIG_CMD_MEMINFO
-#define CONFIG_CMD_MEMTEST
-#define CONFIG_SYS_MEMTEST_START	0x80000000
-#define CONFIG_SYS_MEMTEST_END		0x9fffffff
 
 #undef CONFIG_EXTRA_ENV_SETTINGS
 #define CONFIG_EXTRA_ENV_SETTINGS		\
-	"initrd_high=0xffffffff\0"		\
 	"verify=no\0"				\
-	"hwconfig=fsl_ddr:bank_intlv=auto\0"	\
-	"loadaddr=0x80100000\0"			\
-	"kernel_addr=0x100000\0"		\
-	"ramdisk_addr=0x800000\0"		\
-	"ramdisk_size=0x2000000\0"		\
 	"fdt_high=0xffffffffffffffff\0"		\
 	"initrd_high=0xffffffffffffffff\0"	\
-	"kernel_start=0xa00000\0"		\
-	"kernel_load=0x96000000\0"		\
+	"fdt_addr=0x00f00000\0"			\
+	"kernel_addr=0x01000000\0"		\
+	"scriptaddr=0x80000000\0"		\
+	"fdtheader_addr_r=0x80100000\0"		\
+	"kernelheader_addr_r=0x80200000\0"	\
+	"kernel_addr_r=0x96000000\0"		\
+	"fdt_addr_r=0x90000000\0"		\
+	"load_addr=0x96000000\0"		\
 	"kernel_size=0x2800000\0"		\
-	"console=ttyAMA0,38400n8\0"
+	"console=ttyS0,115200\0"		\
+	BOOTENV					\
+	"boot_scripts=ls1012afrdm_boot.scr\0"	\
+	"scan_dev_for_boot_part="		\
+	     "part list ${devtype} ${devnum} devplist; "	\
+	     "env exists devplist || setenv devplist 1; "	\
+	     "for distro_bootpart in ${devplist}; do "		\
+		  "if fstype ${devtype} "			\
+		      "${devnum}:${distro_bootpart} "		\
+		      "bootfstype; then "			\
+		      "run scan_dev_for_boot; "	\
+		  "fi; "			\
+	      "done\0"				\
+	"scan_dev_for_boot="				  \
+		"echo Scanning ${devtype} "		  \
+				"${devnum}:${distro_bootpart}...; "  \
+		"for prefix in ${boot_prefixes}; do "	  \
+			"run scan_dev_for_scripts; "	  \
+		"done;"					  \
+		"\0"					  \
+	"installer=load usb 0:2 $load_addr "	\
+		   "/flex_installer_arm64.itb; "	\
+		   "bootm $load_addr#$board\0"	\
+	"qspi_bootcmd=pfe stop; echo Trying load from qspi..;"	\
+		"sf probe && sf read $load_addr "	\
+		"$kernel_addr $kernel_size && bootm $load_addr#$board\0"
+
+#undef CONFIG_BOOTCOMMAND
+#ifdef CONFIG_TFABOOT
+#undef QSPI_NOR_BOOTCOMMAND
+#define QSPI_NOR_BOOTCOMMAND "pfe stop;run distro_bootcmd;run qspi_bootcmd"
+#else
+#define CONFIG_BOOTCOMMAND "pfe stop;run distro_bootcmd;run qspi_bootcmd"
+#endif
+
+#define CONFIG_CMD_MEMINFO
+#define CONFIG_SYS_MEMTEST_START	0x80000000
+#define CONFIG_SYS_MEMTEST_END		0x9fffffff
 
 #endif /* __LS1012ARDB_H__ */

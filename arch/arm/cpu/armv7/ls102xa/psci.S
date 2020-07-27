@@ -1,8 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright 2015 Freescale Semiconductor, Inc.
  * Author: Wang Dongsheng <dongsheng.wang@freescale.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <config.h>
@@ -29,6 +28,7 @@
 #define PSCI_FN_AFFINITY_INFO_FEATURE_MASK	0x0
 #define PSCI_FN_SYSTEM_OFF_FEATURE_MASK		0x0
 #define PSCI_FN_SYSTEM_RESET_FEATURE_MASK	0x0
+#define PSCI_FN_SYSTEM_SUSPEND_FEATURE_MASK	0x0
 
 	.pushsection ._secure.text, "ax"
 
@@ -36,7 +36,7 @@
 
 	.align	5
 
-#define	ONE_MS		(GENERIC_TIMER_CLK / 1000)
+#define	ONE_MS		(COUNTER_FREQUENCY / 1000)
 #define	RESET_WAIT	(30 * ONE_MS)
 
 .globl	psci_version
@@ -47,22 +47,24 @@ psci_version:
 	bx	lr
 
 _ls102x_psci_supported_table:
-	.word	PSCI_FN_PSCI_VERSION
+	.word	ARM_PSCI_0_2_FN_PSCI_VERSION
 	.word	PSCI_FN_PSCI_VERSION_FEATURE_MASK
-	.word	PSCI_FN_CPU_SUSPEND
+	.word	ARM_PSCI_0_2_FN_CPU_SUSPEND
 	.word	PSCI_FN_CPU_SUSPEND_FEATURE_MASK
-	.word	PSCI_FN_CPU_OFF
+	.word	ARM_PSCI_0_2_FN_CPU_OFF
 	.word	PSCI_FN_CPU_OFF_FEATURE_MASK
-	.word	PSCI_FN_CPU_ON
+	.word	ARM_PSCI_0_2_FN_CPU_ON
 	.word	PSCI_FN_CPU_ON_FEATURE_MASK
-	.word	PSCI_FN_AFFINITY_INFO
+	.word	ARM_PSCI_0_2_FN_AFFINITY_INFO
 	.word	PSCI_FN_AFFINITY_INFO_FEATURE_MASK
-	.word	PSCI_FN_SYSTEM_OFF
+	.word	ARM_PSCI_0_2_FN_SYSTEM_OFF
 	.word	PSCI_FN_SYSTEM_OFF_FEATURE_MASK
-	.word	PSCI_FN_SYSTEM_RESET
+	.word	ARM_PSCI_0_2_FN_SYSTEM_RESET
 	.word	PSCI_FN_SYSTEM_RESET_FEATURE_MASK
+	.word	ARM_PSCI_1_0_FN_SYSTEM_SUSPEND
+	.word	PSCI_FN_SYSTEM_SUSPEND_FEATURE_MASK
 	.word	0
-	.word	PSCI_RET_NOT_SUPPORTED
+	.word	ARM_PSCI_RET_NI
 
 .globl	psci_features
 psci_features:
@@ -78,40 +80,54 @@ out_psci_features:
 	ldr	r0, [r2, #4]
 	bx	lr
 
-#define AFFINITY_LEVEL_PROCESSOR_SHIFT		8
-@ Expect target CPU in r1, return the target cpu number in R0
-.globl	psci_get_target_cpu_id
-psci_get_target_cpu_id:
-	@ Get the CPU number
-	and	r0, r1, #0xff
+@ r0: return value ARM_PSCI_RET_SUCCESS or ARM_PSCI_RET_INVAL
+@ r1: input target CPU ID in MPIDR format, original value in r1 may be dropped
+@ r4: output validated CPU ID if ARM_PSCI_RET_SUCCESS returns, meaningless for
+@ ARM_PSCI_RET_INVAL,suppose caller saves r4 before calling
+LENTRY(psci_check_target_cpu_id)
+	@ Get the real CPU number
+	and	r4, r1, #0xff
+	mov	r0, #ARM_PSCI_RET_INVAL
 
-	@ Verify bit[31:24], bits must be zero.
+	@ Bit[31:24], bits must be zero.
 	tst	r1, #0xff000000
-	bne	out_psci_get_target_cpu_id
+	bxne	lr
 
-	@ Verify Affinity level 2: Cluster, only one cluster in LS1021xa SoC.
+	@ Affinity level 2 - Cluster: only one cluster in LS1021xa.
 	tst	r1, #0xff0000
-	bne	out_psci_get_target_cpu_id
+	bxne	lr
 
-	@ Verify Affinity level 1: Processors, should in 0xf00 processor.
-	lsr	r1, r1, #AFFINITY_LEVEL_PROCESSOR_SHIFT
+	@ Affinity level 1 - Processors: should be in 0xf00 format.
+	lsr	r1, r1, #8
 	teq	r1, #0xf
-	bne	out_psci_get_target_cpu_id
+	bxne	lr
 
-	@ Verify CPU, Affinity level 0: Only 0, 1 is effective value.
-	cmp	r0, #2
-	bge	out_psci_get_target_cpu_id
+	@ Affinity level 0 - CPU: only 0, 1 are valid in LS1021xa.
+	cmp	r4, #2
+	bxge	lr
 
+	mov	r0, #ARM_PSCI_RET_SUCCESS
 	bx	lr
-
-out_psci_get_target_cpu_id:
-	mov	r0, #PSCI_RET_INVALID_PARAMS
-	bx	lr
+ENDPROC(psci_check_target_cpu_id)
 
 	@ r1 = target CPU
 	@ r2 = target PC
 .globl	psci_cpu_on
 psci_cpu_on:
+	push	{r4, r5, r6, lr}
+
+	@ Clear and Get the correct CPU number
+	@ r1 = 0xf01
+	bl	psci_check_target_cpu_id
+	cmp	r0, #ARM_PSCI_RET_INVAL
+	beq	out_psci_cpu_on
+
+	mov	r0, r4
+	mov	r1, r2
+	mov	r2, r3
+	bl	psci_save
+	mov	r1, r4
+
 	@ Get DCFG base address
 	movw	r4, #(CONFIG_SYS_FSL_GUTS_ADDR & 0xffff)
 	movt	r4, #(CONFIG_SYS_FSL_GUTS_ADDR >> 16)
@@ -171,7 +187,10 @@ holdoff_release:
 	dsb
 
 	@ Return
-	mov	r0, #PSCI_RET_SUCCESS
+	mov	r0, #ARM_PSCI_RET_SUCCESS
+
+out_psci_cpu_on:
+	pop	{r4, r5, r6, lr}
 	bx	lr
 
 .globl	psci_cpu_off
@@ -181,25 +200,20 @@ psci_cpu_off:
 1:	wfi
 	b	1b
 
-.globl	psci_cpu_suspend
-psci_cpu_suspend:
-	mov	r0, #PSCI_RET_INVALID_PARAMS
-	bx	lr
-
 .globl	psci_affinity_info
 psci_affinity_info:
 	push	{lr}
 
-	mov	r0, #PSCI_RET_INVALID_PARAMS
+	mov	r0, #ARM_PSCI_RET_INVAL
 
 	@ Verify Affinity level
 	cmp	r2, #0
 	bne	out_affinity_info
 
-	bl	psci_get_target_cpu_id
-	cmp	r0, #PSCI_RET_INVALID_PARAMS
+	bl	psci_check_target_cpu_id
+	cmp	r0, #ARM_PSCI_RET_INVAL
 	beq	out_affinity_info
-	mov	r1, r0
+	mov	r1, r4
 
 	@ Get RCPM base address
 	movw	r4, #(CONFIG_SYS_FSL_RCPM_ADDR & 0xffff)
@@ -232,14 +246,12 @@ psci_system_reset:
 1:	wfi
 	b	1b
 
-.globl	psci_arch_init
-psci_arch_init:
-	mov	r6, lr
+.globl	psci_system_suspend
+psci_system_suspend:
+	push	{lr}
 
-	bl	psci_get_cpu_id
-	bl	psci_get_cpu_stack_top
-	mov	sp, r0
+	bl	ls1_system_suspend
 
-	bx	r6
+	pop	{pc}
 
 	.popsection

@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Cortina CS4315/CS4340 10G PHY drivers
- *
- * SPDX-License-Identifier:     GPL-2.0+
+ * Cortina CS4223 40G PHY driver
  *
  * Copyright 2014 Freescale Semiconductor, Inc.
+ * Copyright 2018 NXP
  *
  */
 
@@ -15,6 +16,7 @@
 #include <linux/err.h>
 #include <phy.h>
 #include <cortina.h>
+#include <cortina_api.h>
 #ifdef CONFIG_SYS_CORTINA_FW_IN_NAND
 #include <nand.h>
 #elif defined(CONFIG_SYS_CORTINA_FW_IN_SPIFLASH)
@@ -27,6 +29,11 @@
 #error The Cortina PHY needs 10G support
 #endif
 
+/* Cortina CS4223 EQ & driver traceloss defaults */
+#define CS4223_LINE_DEFAULT_TRACELOSS CS_HSIO_TRACE_LOSS_4dB
+#define CS4223_HOST_DEFAULT_TRACELOSS CS_HSIO_TRACE_LOSS_4dB
+
+#ifndef CORTINA_NO_FW_UPLOAD
 struct cortina_reg_config cortina_reg_cfg[] = {
 	/* CS4315_enable_sr_mode */
 	{VILLA_GLOBAL_MSEQCLKCTRL, 0x8004},
@@ -139,8 +146,9 @@ void cs4340_upload_firmware(struct phy_device *phydev)
 	size_t fw_length = CONFIG_CORTINA_FW_LENGTH;
 
 	addr = malloc(CONFIG_CORTINA_FW_LENGTH);
-	ret = nand_read(&nand_info[0], (loff_t)CONFIG_CORTINA_FW_ADDR,
-		       &fw_length, (u_char *)addr);
+	ret = nand_read(get_nand_dev_by_index(0),
+			(loff_t)CONFIG_CORTINA_FW_ADDR,
+			&fw_length, (u_char *)addr);
 	if (ret == -EUCLEAN) {
 		printf("NAND read of Cortina firmware at 0x%x failed %d\n",
 		       CONFIG_CORTINA_FW_ADDR, ret);
@@ -174,9 +182,13 @@ void cs4340_upload_firmware(struct phy_device *phydev)
 		printf("MMC read: dev # %u, block # %u, count %u ...\n",
 		       dev, blk, cnt);
 		mmc_init(mmc);
-		(void)mmc->block_dev.block_read(dev, blk, cnt, addr);
-		/* flush cache after read */
-		flush_cache((ulong)addr, cnt * 512);
+#ifdef CONFIG_BLK
+		(void)blk_dread(mmc_get_blk_desc(mmc), blk, cnt,
+						addr);
+#else
+		(void)mmc->block_dev.block_read(&mmc->block_dev, blk, cnt,
+						addr);
+#endif
 	}
 #endif
 
@@ -215,12 +227,22 @@ void cs4340_upload_firmware(struct phy_device *phydev)
 		phy_write(phydev, 0x00, fw_temp.reg_addr, fw_temp.reg_value);
 	}
 }
+#endif
 
 int cs4340_phy_init(struct phy_device *phydev)
 {
+#ifndef CORTINA_NO_FW_UPLOAD
 	int timeout = 100;  /* 100ms */
+#endif
 	int reg_value;
 
+	/*
+	 * Cortina phy has provision to store
+	 * phy firmware in attached dedicated EEPROM.
+	 * Boards designed with EEPROM attached to Cortina
+	 * does not require FW upload.
+	 */
+#ifndef CORTINA_NO_FW_UPLOAD
 	/* step1: BIST test */
 	phy_write(phydev, 0x00, VILLA_GLOBAL_MSEQCLKCTRL,     0x0004);
 	phy_write(phydev, 0x00, VILLA_GLOBAL_LINE_SOFT_RESET, 0x0000);
@@ -241,6 +263,7 @@ int cs4340_phy_init(struct phy_device *phydev)
 
 	/* setp2: upload ucode */
 	cs4340_upload_firmware(phydev);
+#endif
 	reg_value = phy_read(phydev, 0x00, VILLA_GLOBAL_DWNLD_CHECKSUM_STATUS);
 	if (reg_value) {
 		debug("%s checksum status failed.\n", __func__);
@@ -258,7 +281,7 @@ int cs4340_config(struct phy_device *phydev)
 
 int cs4340_probe(struct phy_device *phydev)
 {
-	phydev->flags = PHY_BROKEN_RESET;
+	phydev->flags = PHY_FLAG_BROKEN_RESET;
 	return 0;
 }
 
@@ -267,6 +290,209 @@ int cs4340_startup(struct phy_device *phydev)
 	phydev->link = 1;
 
 	/* For now just lie and say it's 10G all the time */
+	phydev->speed = SPEED_10000;
+	phydev->duplex = DUPLEX_FULL;
+	return 0;
+}
+
+int cs4223_phy_setup(struct phy_device *phydev)
+{
+	int status = CS_OK;
+	struct cs4224_rules_t rules;
+	unsigned int slice = 0;
+	char *env_host_driver_ptr = env_get("cs4223_host_gain");
+	char *env_host_eq_ptr     = env_get("cs4223_host_eq");
+	char *env_host_edc_ptr    = env_get("cs4223_host_edc");
+	char *env_line_driver_ptr = env_get("cs4223_line_gain");
+	char *env_line_eq_ptr     = env_get("cs4223_line_eq");
+	char *env_line_edc_ptr    = env_get("cs4223_line_edc");
+
+	char *env_autoconfig_ptr  = env_get("cs4223_autoconfig");
+	int autoconfig_success = 0;
+	int mseq_dyn_reconfig = CS_FALSE;
+
+	int host_driver_settings = CS4223_HOST_DEFAULT_TRACELOSS;
+	int host_eq_settings     = CS4223_HOST_DEFAULT_TRACELOSS;
+	int host_edc_mode        = CS_HSIO_EDC_MODE_CX1;
+
+	int line_driver_settings = CS4223_LINE_DEFAULT_TRACELOSS;
+	int line_eq_settings     = CS4223_LINE_DEFAULT_TRACELOSS;
+	int line_edc_mode        = CS_HSIO_EDC_MODE_SR;
+
+	cs4223_glue_phydev_set(phydev);
+
+	status |= cs4224_hard_reset(slice);
+	if (status != CS_OK) {
+		printf("error trying to reset the device\n");
+		return status;
+	}
+
+	if (env_autoconfig_ptr) {
+		if (!strncmp(env_autoconfig_ptr, "copper", 6)) {
+			line_edc_mode = CS_HSIO_EDC_MODE_CX1;
+			host_edc_mode = CS_HSIO_EDC_MODE_CX1;
+			host_driver_settings = CS_HSIO_TRACE_LOSS_4dB;
+			host_eq_settings = CS_HSIO_TRACE_LOSS_4dB;
+			line_driver_settings = CS_HSIO_TRACE_LOSS_6dB;
+			line_eq_settings = CS_HSIO_TRACE_LOSS_6dB;
+			mseq_dyn_reconfig = CS_TRUE;
+			autoconfig_success = 1;
+		}
+
+		if (!strncmp(env_autoconfig_ptr, "optical", 7)) {
+			line_edc_mode = CS_HSIO_EDC_MODE_SR;
+			host_edc_mode = CS_HSIO_EDC_MODE_CX1;
+			host_driver_settings = CS_HSIO_TRACE_LOSS_4dB;
+			host_eq_settings = CS_HSIO_TRACE_LOSS_4dB;
+			line_driver_settings = CS_HSIO_TRACE_LOSS_4dB;
+			line_eq_settings = CS_HSIO_TRACE_LOSS_4dB;
+			mseq_dyn_reconfig = CS_FALSE;
+			autoconfig_success = 1;
+		}
+	}
+
+	if (autoconfig_success) {
+		printf("CS4223: setting defaults for %s medium type...\n",
+		       env_autoconfig_ptr);
+		goto skip_config;
+	}
+
+	if (env_host_driver_ptr) {
+		host_driver_settings =
+			simple_strtoul(env_host_driver_ptr, NULL, 10);
+
+		if ((host_driver_settings < CS_HSIO_TRACE_LOSS_0dB) ||
+		    (host_driver_settings > CS_HSIO_TRACE_LOSS_6dB)) {
+			printf("CS4223: host driver settings (%ddB) not ",
+			       host_driver_settings);
+			printf("supported. Using defaults.\n");
+			host_driver_settings = CS4223_HOST_DEFAULT_TRACELOSS;
+		} else {
+			host_eq_settings = host_driver_settings;
+		}
+	}
+
+	if (env_line_driver_ptr) {
+		line_driver_settings =
+			simple_strtoul(env_line_driver_ptr, NULL, 10);
+
+		if ((line_driver_settings < CS_HSIO_TRACE_LOSS_0dB) ||
+		    (line_driver_settings > CS_HSIO_TRACE_LOSS_6dB)) {
+			printf("CS4223: line driver settings (%ddB) not ",
+			       line_driver_settings);
+			printf("supported. Using defaults.\n");
+			line_driver_settings = CS4223_LINE_DEFAULT_TRACELOSS;
+		} else {
+			line_eq_settings = line_driver_settings;
+		}
+	}
+
+	if (env_host_eq_ptr) {
+		host_eq_settings = simple_strtoul(env_host_eq_ptr, NULL, 10);
+		if ((host_eq_settings < CS_HSIO_TRACE_LOSS_0dB) ||
+		    (host_eq_settings > CS_HSIO_TRACE_LOSS_6dB)) {
+			printf("CS4223: host EQ traceloss (%ddB) not supported",
+			       host_eq_settings);
+			printf(". Matching driver settings or defaults.\n");
+			host_eq_settings = host_driver_settings;
+		}
+	}
+
+	if (env_line_eq_ptr) {
+		line_eq_settings = simple_strtoul(env_line_eq_ptr, NULL, 10);
+		if ((line_eq_settings < CS_HSIO_TRACE_LOSS_0dB) ||
+		    (line_eq_settings > CS_HSIO_TRACE_LOSS_6dB)) {
+			printf("CS4223: line EQ traceloss (%ddB) not supported",
+			       line_eq_settings);
+			printf(". Matching driver settings or defaults.\n");
+			line_eq_settings = line_driver_settings;
+		}
+	}
+
+	if (env_line_edc_ptr) {
+		if (!strncmp(env_line_edc_ptr, "cx", 2))
+			line_edc_mode = CS_HSIO_EDC_MODE_CX1;
+
+		if (!strncmp(env_line_edc_ptr, "sr", 2))
+			line_edc_mode = CS_HSIO_EDC_MODE_SR;
+	}
+
+	if (env_host_edc_ptr) {
+		if (!strncmp(env_host_edc_ptr, "cx", 2))
+			host_edc_mode = CS_HSIO_EDC_MODE_CX1;
+
+		if (!strncmp(env_host_edc_ptr, "sr", 2))
+			host_edc_mode = CS_HSIO_EDC_MODE_SR;
+	}
+
+skip_config:
+	printf("CS4223: edc/gain/equalization settings: ");
+	printf("host: %s/%ddB/%ddB, line: %s/%ddB/%ddB\n",
+	       host_edc_mode == CS_HSIO_EDC_MODE_CX1 ? "CX" : "SR",
+	       host_driver_settings,
+	       host_eq_settings,
+	       line_edc_mode == CS_HSIO_EDC_MODE_CX1 ? "CX" : "SR",
+	       line_driver_settings,
+	       line_eq_settings);
+
+	memset(&rules, 0, sizeof(struct cs4224_rules_t));
+	status |= cs4224_rules_set_default(CS4224_TARGET_APPLICATION_10G,
+					   &rules);
+
+	if (host_edc_mode == CS_HSIO_EDC_MODE_CX1 &&
+	    line_edc_mode == CS_HSIO_EDC_MODE_CX1)
+		mseq_dyn_reconfig = CS_TRUE;
+	else
+		mseq_dyn_reconfig = CS_FALSE;
+
+	rules.mseq_dyn_reconfig                = mseq_dyn_reconfig;
+	rules.rx_if.dplx_line_edc_mode         = line_edc_mode;
+	rules.rx_if.dplx_line_eq.traceloss     = line_eq_settings;
+	rules.tx_if.dplx_line_driver.traceloss = line_driver_settings;
+	rules.rx_if.dplx_host_edc_mode         = host_edc_mode;
+	rules.rx_if.dplx_host_eq.traceloss     = host_eq_settings;
+	rules.tx_if.dplx_host_driver.traceloss = host_driver_settings;
+
+	for (slice = 0; slice < CS4224_MAX_NUM_SLICES(0); slice++)
+		status |= cs4224_slice_enter_operational_state(slice, &rules);
+
+	return status;
+}
+
+int cs4223_phy_init(struct phy_device *phydev)
+{
+	int reg_value;
+	int status;
+
+	reg_value = phy_read(phydev, 0x00, CS4223_EEPROM_STATUS);
+	if (!(reg_value & CS4223_EEPROM_FIRMWARE_LOADDONE)) {
+		printf("\nCS4223: Using software initialization...\n");
+		status = cs4223_phy_setup(phydev);
+		if (status != CS_OK)
+			printf("CS4223: Software initialization had issues!\n");
+
+	} else {
+		printf("\nCS4223: WARNING: Using EEPROM configuration...\n");
+		printf("CS4223: WARNING: Change SW2[2] for software config\n");
+	}
+
+	return 0;
+}
+
+int cs4223_config(struct phy_device *phydev)
+{
+	return cs4223_phy_init(phydev);
+}
+
+int cs4223_probe(struct phy_device *phydev)
+{
+	phydev->flags = PHY_FLAG_BROKEN_RESET;
+	return 0;
+}
+
+int cs4223_startup(struct phy_device *phydev)
+{
+	phydev->link = 1;
 	phydev->speed = SPEED_10000;
 	phydev->duplex = DUPLEX_FULL;
 	return 0;
@@ -286,54 +512,56 @@ struct phy_driver cs4340_driver = {
 	.shutdown = &gen10g_shutdown,
 };
 
+struct phy_driver cs4223_driver = {
+	.name = "Cortina CS4223",
+	.uid = PHY_UID_CS4223,
+	.mask = 0x0ffff00f,
+	.features = PHY_10G_FEATURES,
+	.mmds = (MDIO_DEVS_PMAPMD | MDIO_DEVS_PCS |
+		 MDIO_DEVS_AN),
+	.config = &cs4223_config,
+	.probe	= &cs4223_probe,
+	.startup = &cs4223_startup,
+	.shutdown = &gen10g_shutdown,
+};
+
 int phy_cortina_init(void)
 {
 	phy_register(&cs4340_driver);
+	phy_register(&cs4223_driver);
 	return 0;
 }
 
 int get_phy_id(struct mii_dev *bus, int addr, int devad, u32 *phy_id)
 {
 	int phy_reg;
-	bool is_cortina_phy = false;
-
-	switch (addr) {
-#ifdef CORTINA_PHY_ADDR1
-	case CORTINA_PHY_ADDR1:
-#endif
-#ifdef CORTINA_PHY_ADDR2
-	case CORTINA_PHY_ADDR2:
-#endif
-#ifdef CORTINA_PHY_ADDR3
-	case CORTINA_PHY_ADDR3:
-#endif
-#ifdef CORTINA_PHY_ADDR4
-	case CORTINA_PHY_ADDR4:
-#endif
-		is_cortina_phy = true;
-		break;
-	default:
-		break;
-	}
 
 	/* Cortina PHY has non-standard offset of PHY ID registers */
-	if (is_cortina_phy)
-		phy_reg = bus->read(bus, addr, 0, VILLA_GLOBAL_CHIP_ID_LSB);
-	else
-		phy_reg = bus->read(bus, addr, devad, MII_PHYSID1);
-
+	phy_reg = bus->read(bus, addr, 0, VILLA_GLOBAL_CHIP_ID_LSB);
 	if (phy_reg < 0)
 		return -EIO;
-
 	*phy_id = (phy_reg & 0xffff) << 16;
-	if (is_cortina_phy)
-		phy_reg = bus->read(bus, addr, 0, VILLA_GLOBAL_CHIP_ID_MSB);
-	else
-		phy_reg = bus->read(bus, addr, devad, MII_PHYSID2);
 
+	phy_reg = bus->read(bus, addr, 0, VILLA_GLOBAL_CHIP_ID_MSB);
 	if (phy_reg < 0)
 		return -EIO;
+	*phy_id |= (phy_reg & 0xffff);
 
+	if ((*phy_id == PHY_UID_CS4340) || (*phy_id == PHY_UID_CS4223))
+		return 0;
+
+	/*
+	 * If Cortina PHY not detected,
+	 * try generic way to find PHY ID registers
+	 */
+	phy_reg = bus->read(bus, addr, devad, MII_PHYSID1);
+	if (phy_reg < 0)
+		return -EIO;
+	*phy_id = (phy_reg & 0xffff) << 16;
+
+	phy_reg = bus->read(bus, addr, devad, MII_PHYSID2);
+	if (phy_reg < 0)
+		return -EIO;
 	*phy_id |= (phy_reg & 0xffff);
 
 	return 0;

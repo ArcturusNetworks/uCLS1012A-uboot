@@ -7,10 +7,9 @@
 
 #include <common.h>
 #include <command.h>
-#include <rtc.h>
+#include <dm.h>
 #include <i2c.h>
-
-#if defined(CONFIG_CMD_DATE)
+#include <rtc.h>
 
 #define PCF2127_REG_CTRL1	0x00
 #define PCF2127_REG_CTRL2	0x01
@@ -23,13 +22,31 @@
 #define PCF2127_REG_MO		0x08
 #define PCF2127_REG_YR		0x09
 
-int rtc_set(struct rtc_time *tm)
+static int pcf2127_read_reg(struct udevice *dev, uint offset,
+			    u8 *buffer, int len)
 {
-	uchar buf[8];
-	int i = 0, err;
+	struct dm_i2c_chip *chip = dev_get_parent_platdata(dev);
+	struct i2c_msg msg;
+	int ret;
 
-	/* start register address */
-	buf[i++] = PCF2127_REG_SC;
+	/* Set the address of the start register to be read */
+	ret = dm_i2c_write(dev, offset, NULL, 0);
+	if (ret < 0)
+		return ret;
+
+	/* Read register's data */
+	msg.addr = chip->chip_addr;
+	msg.flags |= I2C_M_RD;
+	msg.len = len;
+	msg.buf = buffer;
+
+	return dm_i2c_xfer(dev, &msg, 1);
+}
+
+static int pcf2127_rtc_set(struct udevice *dev, const struct rtc_time *tm)
+{
+	uchar buf[7] = {0};
+	int i = 0, ret;
 
 	/* hours, minutes and seconds */
 	buf[i++] = bin2bcd(tm->tm_sec);
@@ -45,50 +62,63 @@ int rtc_set(struct rtc_time *tm)
 	buf[i++] = bin2bcd(tm->tm_year % 100);
 
 	/* write register's data */
-	err = i2c_write(CONFIG_SYS_I2C_RTC_ADDR,
-			PCF2127_REG_CTRL1, 0, buf, sizeof(buf));
+	ret = dm_i2c_write(dev, PCF2127_REG_SC, buf, i);
 
-	return err;
+	return ret;
 }
 
-int rtc_get(struct rtc_time *tmp)
+static int pcf2127_rtc_get(struct udevice *dev, struct rtc_time *tm)
 {
 	int ret = 0;
 	uchar buf[10] = { PCF2127_REG_CTRL1 };
 
-	ret = i2c_write(CONFIG_SYS_I2C_RTC_ADDR,
-			PCF2127_REG_CTRL1, 0, buf, 1);
-	if (ret < 0)
-		return ret;
-	ret = i2c_read(CONFIG_SYS_I2C_RTC_ADDR,
-		       PCF2127_REG_CTRL1, 0, buf, sizeof(buf));
+	ret = pcf2127_read_reg(dev, PCF2127_REG_CTRL1, buf, sizeof(buf));
 	if (ret < 0)
 		return ret;
 
 	if (buf[PCF2127_REG_CTRL3] & 0x04)
 		puts("### Warning: RTC Low Voltage - date/time not reliable\n");
 
-	tmp->tm_sec  = bcd2bin(buf[PCF2127_REG_SC] & 0x7F);
-	tmp->tm_min  = bcd2bin(buf[PCF2127_REG_MN] & 0x7F);
-	tmp->tm_hour = bcd2bin(buf[PCF2127_REG_HR] & 0x3F);
-	tmp->tm_mday = bcd2bin(buf[PCF2127_REG_DM] & 0x3F);
-	tmp->tm_mon  = bcd2bin(buf[PCF2127_REG_MO] & 0x1F) - 1;
-	tmp->tm_year = bcd2bin(buf[PCF2127_REG_YR]) + 1900;
-	if (tmp->tm_year < 1970)
-		tmp->tm_year += 100;	/* assume we are in 1970...2069 */
-	tmp->tm_wday = buf[PCF2127_REG_DW] & 0x07;
-	tmp->tm_yday = 0;
-	tmp->tm_isdst = 0;
+	tm->tm_sec  = bcd2bin(buf[PCF2127_REG_SC] & 0x7F);
+	tm->tm_min  = bcd2bin(buf[PCF2127_REG_MN] & 0x7F);
+	tm->tm_hour = bcd2bin(buf[PCF2127_REG_HR] & 0x3F);
+	tm->tm_mday = bcd2bin(buf[PCF2127_REG_DM] & 0x3F);
+	tm->tm_mon  = bcd2bin(buf[PCF2127_REG_MO] & 0x1F) - 1;
+	tm->tm_year = bcd2bin(buf[PCF2127_REG_YR]) + 1900;
+	if (tm->tm_year < 1970)
+		tm->tm_year += 100;	/* assume we are in 1970...2069 */
+	tm->tm_wday = buf[PCF2127_REG_DW] & 0x07;
+	tm->tm_yday = 0;
+	tm->tm_isdst = 0;
 
 	debug("Get DATE: %4d-%02d-%02d (wday=%d)  TIME: %2d:%02d:%02d\n",
-	      tmp->tm_year, tmp->tm_mon, tmp->tm_mday, tmp->tm_wday,
-	      tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
+	      tm->tm_year, tm->tm_mon, tm->tm_mday, tm->tm_wday,
+	      tm->tm_hour, tm->tm_min, tm->tm_sec);
 
 	return ret;
 }
 
-void rtc_reset(void)
+static int pcf2127_rtc_reset(struct udevice *dev)
 {
 	/*Doing nothing here*/
+
+	return 0;
 }
-#endif
+
+static const struct rtc_ops pcf2127_rtc_ops = {
+	.get = pcf2127_rtc_get,
+	.set = pcf2127_rtc_set,
+	.reset = pcf2127_rtc_reset,
+};
+
+static const struct udevice_id pcf2127_rtc_ids[] = {
+	{ .compatible = "pcf2127-rtc" },
+	{ }
+};
+
+U_BOOT_DRIVER(rtc_pcf2127) = {
+	.name	= "rtc-pcf2127",
+	.id	= UCLASS_RTC,
+	.of_match = pcf2127_rtc_ids,
+	.ops	= &pcf2127_rtc_ops,
+};

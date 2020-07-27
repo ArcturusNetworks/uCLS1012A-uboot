@@ -1,21 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2015 Freescale Semiconductor, Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
+#include <dm.h>
 #include <fsl_validate.h>
 #include <fsl_secboot_err.h>
 #include <fsl_sfp.h>
 #include <fsl_sec.h>
 #include <command.h>
 #include <malloc.h>
-#include <dm/uclass.h>
 #include <u-boot/rsa-mod-exp.h>
 #include <hash.h>
 #include <fsl_secboot_err.h>
-#ifdef CONFIG_LS102XA
+#ifdef CONFIG_ARCH_LS1021A
 #include <asm/arch/immap_ls102xa.h>
 #endif
 
@@ -127,7 +126,6 @@ int get_csf_base_addr(u32 *csf_addr, u32 *flash_base_addr)
 static int get_ie_info_addr(uintptr_t *ie_addr)
 {
 	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
-
 	/* For LS-CH3, the address of IE Table is
 	 * stated in Scratch13 and scratch14 of DCFG.
 	 * Bootrom validates this table while validating uboot.
@@ -297,7 +295,7 @@ static u32 read_validate_ie_tbl(struct fsl_secboot_img_priv *img)
 			return ERROR_IE_TABLE_NOT_FOUND;
 		else
 			install_ie_tbl(img->ie_addr, img);
-	}
+		}
 
 	ie_info = (struct ie_key_info *)(uintptr_t)img->ie_addr;
 	if (ie_info->num_keys == 0 || ie_info->num_keys > 32)
@@ -339,27 +337,15 @@ static inline u32 get_key_len(struct fsl_secboot_img_priv *img)
  */
 static void fsl_secboot_header_verification_failure(void)
 {
-	struct ccsr_sec_mon_regs *sec_mon_regs = (void *)
-						(CONFIG_SYS_SEC_MON_ADDR);
 	struct ccsr_sfp_regs *sfp_regs = (void *)(CONFIG_SYS_SFP_ADDR);
-	u32 sts = sec_mon_in32(&sec_mon_regs->hp_stat);
 
 	/* 29th bit of OSPR is ITS */
 	u32 its = sfp_in32(&sfp_regs->ospr) >> 2;
 
-	/*
-	 * Read the SEC_MON status register
-	 * Read SSM_ST field
-	 */
-	sts = sec_mon_in32(&sec_mon_regs->hp_stat);
-	if ((sts & HPSR_SSM_ST_MASK) == HPSR_SSM_ST_TRUST) {
-		if (its == 1)
-			change_sec_mon_state(HPSR_SSM_ST_TRUST,
-					     HPSR_SSM_ST_SOFT_FAIL);
-		else
-			change_sec_mon_state(HPSR_SSM_ST_TRUST,
-					     HPSR_SSM_ST_NON_SECURE);
-	}
+	if (its == 1)
+		set_sec_mon_state(HPSR_SSM_ST_SOFT_FAIL);
+	else
+		set_sec_mon_state(HPSR_SSM_ST_NON_SECURE);
 
 	printf("Generating reset request\n");
 	do_reset(NULL, 0, 0, NULL);
@@ -376,32 +362,20 @@ static void fsl_secboot_header_verification_failure(void)
  */
 static void fsl_secboot_image_verification_failure(void)
 {
-	struct ccsr_sec_mon_regs *sec_mon_regs = (void *)
-						(CONFIG_SYS_SEC_MON_ADDR);
 	struct ccsr_sfp_regs *sfp_regs = (void *)(CONFIG_SYS_SFP_ADDR);
-	u32 sts = sec_mon_in32(&sec_mon_regs->hp_stat);
 
 	u32 its = (sfp_in32(&sfp_regs->ospr) & ITS_MASK) >> ITS_BIT;
 
-	/*
-	 * Read the SEC_MON status register
-	 * Read SSM_ST field
-	 */
-	sts = sec_mon_in32(&sec_mon_regs->hp_stat);
-	if ((sts & HPSR_SSM_ST_MASK) == HPSR_SSM_ST_TRUST) {
-		if (its == 1) {
-			change_sec_mon_state(HPSR_SSM_ST_TRUST,
-					     HPSR_SSM_ST_SOFT_FAIL);
+	if (its == 1) {
+		set_sec_mon_state(HPSR_SSM_ST_SOFT_FAIL);
 
-			printf("Generating reset request\n");
-			do_reset(NULL, 0, 0, NULL);
-			/* If reset doesn't coocur, halt execution */
-			do_esbc_halt(NULL, 0, 0, NULL);
+		printf("Generating reset request\n");
+		do_reset(NULL, 0, 0, NULL);
+		/* If reset doesn't coocur, halt execution */
+		do_esbc_halt(NULL, 0, 0, NULL);
 
-		} else {
-			change_sec_mon_state(HPSR_SSM_ST_TRUST,
-					     HPSR_SSM_ST_NON_SECURE);
-		}
+	} else {
+		set_sec_mon_state(HPSR_SSM_ST_NON_SECURE);
 	}
 }
 
@@ -418,6 +392,7 @@ static void fsl_secboot_bootscript_parse_failure(void)
  */
 void fsl_secboot_handle_error(int error)
 {
+#ifndef CONFIG_SPL_BUILD
 	const struct fsl_secboot_errcode *e;
 
 	for (e = fsl_secboot_errcodes; e->errcode != ERROR_ESBC_CLIENT_MAX;
@@ -425,6 +400,9 @@ void fsl_secboot_handle_error(int error)
 		if (e->errcode == error)
 			printf("ERROR :: %x :: %s\n", error, e->name);
 	}
+#else
+	printf("ERROR :: %x\n", error);
+#endif
 
 	/* If Boot Mode is secure, transition the SNVS state and issue
 	 * reset based on type of failure and ITS setting.
@@ -848,7 +826,6 @@ static int calculate_cmp_img_sig(struct fsl_secboot_img_priv *img)
 
 	return 0;
 }
-
 /* Function to initialize img priv and global data structure
  */
 static int secboot_init(struct fsl_secboot_img_priv **img_ptr)
@@ -867,11 +844,13 @@ static int secboot_init(struct fsl_secboot_img_priv **img_ptr)
 #endif
 	return 0;
 }
+
+
 /* haddr - Address of the header of image to be validated.
  * arg_hash_str - Option hash string. If provided, this
- * overides the key hash in the SFP fuses.
+ * overrides the key hash in the SFP fuses.
  * img_addr_ptr - Optional pointer to address of image to be validated.
- * If non zero addr, this overides the addr of image in header,
+ * If non zero addr, this overrides the addr of image in header,
  * otherwise updated to image addr in header.
  * Acts as both input and output of function.
  * This pointer shouldn't be NULL.
@@ -977,6 +956,7 @@ int fsl_secboot_validate(uintptr_t haddr, char *arg_hash_str,
 	}
 
 exit:
+	/* Free Img as it was malloc'ed*/
 	free(img);
 	return ret;
 }

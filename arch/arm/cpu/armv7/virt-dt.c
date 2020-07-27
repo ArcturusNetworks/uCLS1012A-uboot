@@ -21,105 +21,10 @@
 #include <linux/ctype.h>
 #include <linux/types.h>
 #include <asm/global_data.h>
-#include <libfdt.h>
+#include <linux/libfdt.h>
 #include <fdt_support.h>
 #include <asm/armv7.h>
 #include <asm/psci.h>
-
-#ifdef CONFIG_ARMV7_PSCI
-#ifdef CONFIG_ARMV7_PSCI_GTE_1_0
-static int fdt_psci_gte_1_0_fixup(void *fdt, int nodeoff)
-{
-	return fdt_setprop_string(fdt, nodeoff, "compatible", "arm,psci-1.0");
-}
-#endif
-
-static int fdt_psci_0_2_fixup(void *fdt, int nodeoff)
-{
-	return fdt_appendprop_string(fdt, nodeoff, "compatible", "arm,psci-0.2");
-}
-
-static int fdt_psci_0_1_fixup(void *fdt, int nodeoff)
-{
-	int ret;
-
-	ret = fdt_appendprop_string(fdt, nodeoff, "compatible", "arm,psci");
-	if (ret)
-		return ret;
-	ret = fdt_setprop_u32(fdt, nodeoff, "cpu_suspend", PSCI_FN_CPU_SUSPEND);
-	if (ret)
-		return ret;
-	ret = fdt_setprop_u32(fdt, nodeoff, "cpu_off", PSCI_FN_CPU_OFF);
-	if (ret)
-		return ret;
-	ret = fdt_setprop_u32(fdt, nodeoff, "cpu_on", PSCI_FN_CPU_ON);
-	if (ret)
-		return ret;
-
-	return fdt_setprop_u32(fdt, nodeoff, "migrate", PSCI_FN_MIGRATE);
-}
-#endif
-
-static int fdt_psci(void *fdt)
-{
-#ifdef CONFIG_ARMV7_PSCI
-	int nodeoff;
-	int tmp;
-
-	nodeoff = fdt_path_offset(fdt, "/cpus");
-	if (nodeoff < 0) {
-		printf("couldn't find /cpus\n");
-		return nodeoff;
-	}
-
-	/* add 'enable-method = "psci"' to each cpu node */
-	for (tmp = fdt_first_subnode(fdt, nodeoff);
-	     tmp >= 0;
-	     tmp = fdt_next_subnode(fdt, tmp)) {
-		const struct fdt_property *prop;
-		int len;
-
-		prop = fdt_get_property(fdt, tmp, "device_type", &len);
-		if (!prop)
-			continue;
-		if (len < 4)
-			continue;
-		if (strcmp(prop->data, "cpu"))
-			continue;
-
-		fdt_setprop_string(fdt, tmp, "enable-method", "psci");
-	}
-
-	nodeoff = fdt_path_offset(fdt, "/psci");
-	if (nodeoff < 0) {
-		nodeoff = fdt_path_offset(fdt, "/");
-		if (nodeoff < 0)
-			return nodeoff;
-
-		nodeoff = fdt_add_subnode(fdt, nodeoff, "psci");
-		if (nodeoff < 0)
-			return nodeoff;
-	}
-
-	tmp = fdt_setprop_string(fdt, nodeoff, "method", "smc");
-	if (tmp)
-		return tmp;
-
-#ifdef CONFIG_ARMV7_PSCI_GTE_1_0
-	tmp = fdt_psci_gte_1_0_fixup(fdt, nodeoff);
-	if (tmp)
-		return tmp;
-#endif
-	tmp = fdt_psci_0_2_fixup(fdt, nodeoff);
-	if (tmp)
-		return tmp;
-
-	tmp = fdt_psci_0_1_fixup(fdt, nodeoff);
-	if (tmp)
-		return tmp;
-#endif
-	return 0;
-}
 
 int armv7_apply_memory_carveout(u64 *start, u64 *size)
 {
@@ -158,8 +63,7 @@ int psci_update_dt(void *fdt)
 #ifndef CONFIG_ARMV7_SECURE_BASE
 	/* secure code lives in RAM, keep it alive */
 	fdt_add_mem_rsv(fdt, (unsigned long)__secure_start,
-			__secure_end + CONFIG_MAX_CPUS * PSCI_PERCPU_STACK_SIZE
-			+ PSCI_STACK_ALIGN_SIZE - __secure_start);
+			__secure_end - __secure_start);
 #endif
 
 	return fdt_psci(fdt);

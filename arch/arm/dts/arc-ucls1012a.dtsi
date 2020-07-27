@@ -1,17 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0+ OR X11
 /*
- * Device Tree Include file for Freescale Layerscape-1012A family SoC.
+ * Device Tree file for Arturus Layerscape-1012A family SoC.
  *
- * Copyright (C) 2016, Freescale Semiconductor
- *
- * This file is licensed under the terms of the GNU General Public
- * License version 2.  This program is licensed "as is" without any
- * warranty of any kind, whether express or implied.
+ * Copyright 2016-2020, Arcturus Networks, Inc.
  */
 
 /include/ "fsl-ls1012a.dtsi"
 
 / {
-	model = "uCLS1012A-SOM";
+	model = "uCLS1012A-SOM Board";
 	aliases {
 		spi0 = &qspi;
 	};
@@ -20,19 +17,30 @@
 &qspi {
 	bus-num = <0>;
 	status = "okay";
-
-	qflash0: s25fl128s@0 {
+	u-boot,dm-pre-reloc;
+	reg = <0x0 0x1550000 0x0 0x10000>,
+	      <0x0 0x40000000 0x0 0x8000000>;
+	reg-names = "QuadSPI", "QuadSPI-memory";
+	qflash0: n25q00a@0 {
 		#address-cells = <1>;
 		#size-cells = <1>;
-		compatible = "spi-flash";
+		u-boot,dm-pre-reloc;
+		compatible = "n25q00a", "jedec,spi-nor";
+		reg = <0>;      /* chip select */
 		spi-max-frequency = <20000000>;
-		reg = <0>;
+		m25p,fast-read;
 	};
 };
 
 &i2c0 {
 	status = "okay";
+	adt7461a@4c {
+		compatible = "adi,adt7461a";
+		reg = <0x4c>;
+	};
 };
+
+#define CONFIG_SYS_I2C_NCT72_ADDR	0x4C
 
 &duart0 {
 	status = "okay";

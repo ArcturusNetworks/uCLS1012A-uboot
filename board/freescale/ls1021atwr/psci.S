@@ -1,8 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright 2015 NXP Semiconductor.
+ * Copyright 2016 NXP Semiconductor.
  * Author: Wang Dongsheng <dongsheng.wang@freescale.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <config.h>
@@ -22,7 +21,4 @@ psci_system_off:
 1:	wfi
 	b	1b
 
-.globl	psci_text_end
-psci_text_end:
-	nop
 	.popsection

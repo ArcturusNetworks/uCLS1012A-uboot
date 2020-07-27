@@ -1,15 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright 2015 Freescale Semiconductor, Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
+ * Copyright 2016 NXP Semiconductor, Inc.
  */
 
 #ifndef __FSL_PPA_H_
 #define __FSL_PPA_H_
 
-int ppa_init_pre(u64 *);
-int ppa_init_entry(void *);
-int ppa_init(void *, u32*, u32*);
-unsigned long ppa_get_dram_block_size(void);
-
+#ifdef CONFIG_FSL_LS_PPA
+int ppa_init(void);
+#endif
 #endif

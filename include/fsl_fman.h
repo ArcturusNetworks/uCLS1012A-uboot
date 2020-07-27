@@ -1,9 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * MPC85xx Internal Memory Map
  *
  * Copyright 2010-2011 Freescale Semiconductor, Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef __FSL_FMAN_H__
@@ -369,8 +368,6 @@ typedef struct fm_fpm {
 /* FMFP_RCR - FMan Rams Control and Event */
 #define FMFP_RCR_MDEC		0x00008000 /* double ECC error in muram */
 #define FMFP_RCR_IDEC		0x00004000 /* double ECC error in iram */
-
-#define FPM_RSTC_FM_RESET	0x80000000 /* FM soft reset */
 
 typedef struct fm_imem {
 	u32	iadd;		/* instruction address register */

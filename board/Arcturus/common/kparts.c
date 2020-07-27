@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2017 Arcturus Networks, Inc.
+ * Copyright 2017-2020 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/
  *           by Oleksandr G Zhadan et al.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <config.h>
@@ -17,10 +16,10 @@
 #endif
 
 #define GETSETENV(e, pn, s) \
-	e = getenv(ENVN1(part##pn##base)); \
+	e = env_get(ENVN1(part##pn##base)); \
 	if (e != NULL) { \
 		pb[s] = (simple_strtoul(e, NULL, 0) - CONFIG_SYS_FLASH_BASE); \
-		e = getenv(ENVN1(part##pn##size)); \
+		e = env_get(ENVN1(part##pn##size)); \
 		if (e != NULL) { \
 			ps[s] = simple_strtoul(e, NULL, 0); \
 			s++; \
@@ -89,5 +88,5 @@ void set_kargs_parts(char *pname)
 	}
 
 	*strrchr(args_mtdparts, ',') = ' ';
-	setenv("kargs_parts", args_mtdparts);
+	env_set("kargs_parts", args_mtdparts);
 }

@@ -1,9 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2013-2015 Freescale Semiconductor, Inc.
+ * Copyright 2019 NXP
  *
  * Freescale Quad Serial Peripheral Interface (QSPI) driver
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -11,24 +11,25 @@
 #include <spi.h>
 #include <asm/io.h>
 #include <linux/sizes.h>
+#include <linux/iopoll.h>
 #include <dm.h>
 #include <errno.h>
 #include <watchdog.h>
+#include <wait_bit.h>
 #include "fsl_qspi.h"
 
 DECLARE_GLOBAL_DATA_PTR;
 
 #define RX_BUFFER_SIZE		0x80
-#ifdef CONFIG_MX6SX
+#if defined(CONFIG_MX6SX) || defined(CONFIG_MX6UL) || \
+	defined(CONFIG_MX6ULL) || defined(CONFIG_MX7D)
 #define TX_BUFFER_SIZE		0x200
 #else
 #define TX_BUFFER_SIZE		0x40
 #endif
 
-#define OFFSET_BITS_MASK	GENMASK(23, 0)
-/* the qspi contrller memmap space ,instead of flash space */
-#define OFFSET_BITS_MASK_QSPI_SPACE	GENMASK(27, 0)
-#define SPI_FLASH_ADDR_EXT_MAGIC	0xaa
+#define OFFSET_BITS_MASK	GENMASK(27, 0)
+#define OFFSET_BITS_MASK24	GENMASK(23, 0)
 
 #define FLASH_STATUS_WEL	0x02
 
@@ -86,7 +87,6 @@ DECLARE_GLOBAL_DATA_PTR;
 /* QSPI max chipselect signals number */
 #define FSL_QSPI_MAX_CHIPSELECT_NUM     4
 
-#ifdef CONFIG_DM_SPI
 /**
  * struct fsl_qspi_platdata - platform data for Freescale QSPI
  *
@@ -107,7 +107,6 @@ struct fsl_qspi_platdata {
 	u32 flash_num;
 	u32 num_chipselect;
 };
-#endif
 
 /**
  * struct fsl_qspi_priv - private data for Freescale QSPI
@@ -138,12 +137,6 @@ struct fsl_qspi_priv {
 	struct fsl_qspi_regs *regs;
 };
 
-#ifndef CONFIG_DM_SPI
-struct fsl_qspi {
-	struct spi_slave slave;
-	struct fsl_qspi_priv priv;
-};
-#endif
 
 static u32 qspi_read32(u32 flags, u32 *addr)
 {
@@ -155,6 +148,18 @@ static void qspi_write32(u32 flags, u32 *addr, u32 val)
 {
 	flags & QSPI_FLAG_REGMAP_ENDIAN_BIG ?
 		out_be32(addr, val) : out_le32(addr, val);
+}
+
+static inline int is_controller_busy(const struct fsl_qspi_priv *priv)
+{
+	u32 val;
+	u32 mask = QSPI_SR_BUSY_MASK | QSPI_SR_AHB_ACC_MASK |
+		   QSPI_SR_IP_ACC_MASK;
+
+	if (priv->flags & QSPI_FLAG_REGMAP_ENDIAN_BIG)
+		mask = (u32)cpu_to_be32(mask);
+
+	return readl_poll_timeout(&priv->regs->sr, val, !(val & mask), 1000);
 }
 
 /* QSPI support swapping the flash read/write data
@@ -270,7 +275,8 @@ static void qspi_set_lut(struct fsl_qspi_priv *priv)
 			     INSTR0(LUT_CMD) | OPRND1(ADDR32BIT) |
 			     PAD1(LUT_PAD1) | INSTR1(LUT_ADDR));
 #endif
-#ifdef CONFIG_MX6SX
+#if defined(CONFIG_MX6SX) || defined(CONFIG_MX6UL) || \
+	defined(CONFIG_MX6ULL) || defined(CONFIG_MX7D)
 	/*
 	 * To MX6SX, OPRND0(TX_BUFFER_SIZE) can not work correctly.
 	 * So, Use IDATSZ in IPCR to determine the size and here set 0.
@@ -389,7 +395,7 @@ static inline void qspi_ahb_read(struct fsl_qspi_priv *priv, u8 *rxbuf, int len)
 {
 	struct fsl_qspi_regs *regs = priv->regs;
 	u32 mcr_reg;
-	void *rx_addr = NULL;
+	void *rx_addr;
 
 	mcr_reg = qspi_read32(priv->flags, &regs->mcr);
 
@@ -397,7 +403,7 @@ static inline void qspi_ahb_read(struct fsl_qspi_priv *priv, u8 *rxbuf, int len)
 		     QSPI_MCR_CLR_RXF_MASK | QSPI_MCR_CLR_TXF_MASK |
 		     QSPI_MCR_RESERVED_MASK | QSPI_MCR_END_CFD_LE);
 
-	rx_addr += priv->cur_amba_base + priv->sf_addr;
+	rx_addr = (void *)(uintptr_t)(priv->cur_amba_base + priv->sf_addr);
 	/* Read out the data directly from the AHB buffer. */
 	memcpy(rxbuf, rx_addr, len);
 
@@ -443,23 +449,13 @@ static void qspi_enable_ddr_mode(struct fsl_qspi_priv *priv)
 static void qspi_init_ahb_read(struct fsl_qspi_priv *priv)
 {
 	struct fsl_qspi_regs *regs = priv->regs;
-	int rx_size = 0x80;
 
 	/* AHB configuration for access buffer 0/1/2 .*/
 	qspi_write32(priv->flags, &regs->buf0cr, QSPI_BUFXCR_INVALID_MSTRID);
 	qspi_write32(priv->flags, &regs->buf1cr, QSPI_BUFXCR_INVALID_MSTRID);
 	qspi_write32(priv->flags, &regs->buf2cr, QSPI_BUFXCR_INVALID_MSTRID);
-
-#ifdef CONFIG_SYS_FSL_ERRATUM_A009282
-	/*A-009282: QuadSPI data pre-fetch can result in incorrect data
-	 *Workaround: Keep the read data size to 64 bits (8 Bytes), which
-	 *disables the prefetch on the AHB buffer,and prevents this issue
-	 *from occurring.
-	*/
-	rx_size = 0x1;
-#endif
 	qspi_write32(priv->flags, &regs->buf3cr, QSPI_BUF3CR_ALLMST_MASK |
-		     (rx_size << QSPI_BUF3CR_ADATSZ_SHIFT));
+		     (0x80 << QSPI_BUF3CR_ADATSZ_SHIFT));
 
 	/* We only use the buffer3 */
 	qspi_write32(priv->flags, &regs->buf0ind, 0);
@@ -506,6 +502,8 @@ static void qspi_op_rdbank(struct fsl_qspi_priv *priv, u8 *rxbuf, u32 len)
 		;
 
 	while (1) {
+		WATCHDOG_RESET();
+
 		reg = qspi_read32(priv->flags, &regs->rbsr);
 		if (reg & QSPI_RBSR_RDBFL_MASK) {
 			data = qspi_read32(priv->flags, &regs->rbdr[0]);
@@ -525,8 +523,8 @@ static void qspi_op_rdbank(struct fsl_qspi_priv *priv, u8 *rxbuf, u32 len)
 static void qspi_op_rdid(struct fsl_qspi_priv *priv, u32 *rxbuf, u32 len)
 {
 	struct fsl_qspi_regs *regs = priv->regs;
-	u32 mcr_reg, rbsr_reg, data;
-	int i, size;
+	u32 mcr_reg, rbsr_reg, data, size;
+	int i;
 
 	mcr_reg = qspi_read32(priv->flags, &regs->mcr);
 	qspi_write32(priv->flags, &regs->mcr,
@@ -542,18 +540,17 @@ static void qspi_op_rdid(struct fsl_qspi_priv *priv, u32 *rxbuf, u32 len)
 		;
 
 	i = 0;
-	size = len;
-	while ((RX_BUFFER_SIZE >= size) && (size > 0)) {
+	while ((RX_BUFFER_SIZE >= len) && (len > 0)) {
+		WATCHDOG_RESET();
+
 		rbsr_reg = qspi_read32(priv->flags, &regs->rbsr);
 		if (rbsr_reg & QSPI_RBSR_RDBFL_MASK) {
 			data = qspi_read32(priv->flags, &regs->rbdr[i]);
 			data = qspi_endian_xchg(data);
-			if (size < 4)
-				memcpy(rxbuf, &data, size);
-			else
-				memcpy(rxbuf, &data, 4);
+			size = (len < 4) ? len : 4;
+			memcpy(rxbuf, &data, size);
+			len -= size;
 			rxbuf++;
-			size -= 4;
 			i++;
 		}
 	}
@@ -682,7 +679,20 @@ static void qspi_op_write(struct fsl_qspi_priv *priv, u8 *txbuf, u32 len)
 		qspi_write32(priv->flags, &regs->tbdr, data);
 		txbuf += 4;
 	}
-
+#if defined(CONFIG_FSL_SPI_ALIGNED_TXFIFO)
+	/*
+	 * There must be at least 16 bytes of data
+	 * available in TX FIFO for any POP operation
+	 */
+	size = (((tx_size/16) + 1) * 4) - size;
+	for (i = 0; i < size; i++) {
+		data = 0;
+		memcpy(&data, txbuf, 4);
+		data = qspi_endian_xchg(data);
+		qspi_write32(priv->flags, &regs->tbdr, data);
+		txbuf += 4;
+	}
+#else
 	size = tx_size % 4;
 	if (size) {
 		data = 0;
@@ -690,7 +700,7 @@ static void qspi_op_write(struct fsl_qspi_priv *priv, u8 *txbuf, u32 len)
 		data = qspi_endian_xchg(data);
 		qspi_write32(priv->flags, &regs->tbdr, data);
 	}
-
+#endif
 	qspi_write32(priv->flags, &regs->ipcr,
 		     (seqid << QSPI_IPCR_SEQID_SHIFT) | tx_size);
 	while (qspi_read32(priv->flags, &regs->sr) & QSPI_SR_BUSY_MASK)
@@ -718,6 +728,8 @@ static void qspi_op_rdsr(struct fsl_qspi_priv *priv, void *rxbuf, u32 len)
 		;
 
 	while (1) {
+		WATCHDOG_RESET();
+
 		reg = qspi_read32(priv->flags, &regs->rbsr);
 		if (reg & QSPI_RBSR_RDBFL_MASK) {
 			data = qspi_read32(priv->flags, &regs->rbdr[0]);
@@ -753,7 +765,8 @@ static void qspi_op_erase(struct fsl_qspi_priv *priv)
 	while (qspi_read32(priv->flags, &regs->sr) & QSPI_SR_BUSY_MASK)
 		;
 
-	if (priv->cur_seqid == QSPI_CMD_SE) {
+	if ((priv->cur_seqid == QSPI_CMD_SE_4B) ||
+	    (priv->cur_seqid == QSPI_CMD_SE)) {
 		qspi_write32(priv->flags, &regs->ipcr,
 			     (SEQID_SE << QSPI_IPCR_SEQID_SHIFT) | 0);
 	} else if (priv->cur_seqid == QSPI_CMD_BE_4K) {
@@ -772,52 +785,46 @@ int qspi_xfer(struct fsl_qspi_priv *priv, unsigned int bitlen,
 	u32 bytes = DIV_ROUND_UP(bitlen, 8);
 	static u32 wr_sfaddr;
 	u32 txbuf;
-	u8 offset_ext = 0;
-	u32 flash_offset;
 
-	if (((u8 *)dout)[5] == SPI_FLASH_ADDR_EXT_MAGIC) {
-		offset_ext = 1;
-		memcpy(&flash_offset, dout + 1, 4);
-	}
-
+	WATCHDOG_RESET();
 	if (dout) {
 		if (flags & SPI_XFER_BEGIN) {
 			priv->cur_seqid = *(u8 *)dout;
-			memcpy(&txbuf, dout, 4);
+			if (FSL_QSPI_FLASH_SIZE  > SZ_16M && bytes > 4)
+				memcpy(&txbuf, dout + 1, 4);
+			else
+				memcpy(&txbuf, dout, 4);
 		}
 
 		if (flags == SPI_XFER_END) {
 			priv->sf_addr = wr_sfaddr;
-			qspi_op_write(priv, (u8 *)dout, bytes);
-			return 0;
+			if (priv->cur_seqid == QSPI_CMD_PP ||
+			    priv->cur_seqid == QSPI_CMD_PP_4B ||
+			    priv->cur_seqid == QSPI_CMD_WRAR) {
+				qspi_op_write(priv, (u8 *)dout, bytes);
+				return 0;
+			}
 		}
 
-		if (priv->cur_seqid == QSPI_CMD_FAST_READ ||
-		    priv->cur_seqid == QSPI_CMD_RDAR) {
-			if (offset_ext)
-				priv->sf_addr = swab32(flash_offset) &
-					OFFSET_BITS_MASK_QSPI_SPACE;
-			else
-				priv->sf_addr = swab32(txbuf) &
-					OFFSET_BITS_MASK;
+		if ((priv->cur_seqid == QSPI_CMD_FAST_READ) ||
+		    (priv->cur_seqid == QSPI_CMD_RDAR)) {
+			priv->sf_addr = swab32(txbuf) & OFFSET_BITS_MASK24;
+		} else if (priv->cur_seqid == QSPI_CMD_FAST_READ_4B) {
+			priv->sf_addr = swab32(txbuf) & OFFSET_BITS_MASK;
 		} else if ((priv->cur_seqid == QSPI_CMD_SE) ||
-			   (priv->cur_seqid == QSPI_CMD_BE_4K)) {
-			if (offset_ext)
-				priv->sf_addr = swab32(flash_offset) &
-					OFFSET_BITS_MASK_QSPI_SPACE;
-			else
-				priv->sf_addr = swab32(txbuf) &
-					OFFSET_BITS_MASK;
+			   priv->cur_seqid == QSPI_CMD_BE_4K) {
+			priv->sf_addr = swab32(txbuf) & OFFSET_BITS_MASK24;
+			qspi_op_erase(priv);
+		} else if (priv->cur_seqid == QSPI_CMD_SE_4B) {
+			priv->sf_addr = swab32(txbuf) & OFFSET_BITS_MASK;
 			qspi_op_erase(priv);
 		} else if (priv->cur_seqid == QSPI_CMD_PP ||
 			   priv->cur_seqid == QSPI_CMD_WRAR) {
-			if (offset_ext)
-				wr_sfaddr = swab32(flash_offset) &
-					OFFSET_BITS_MASK_QSPI_SPACE;
-			else
-				wr_sfaddr = swab32(txbuf) & OFFSET_BITS_MASK;
+			wr_sfaddr = swab32(txbuf) & OFFSET_BITS_MASK24;
+		} else if (priv->cur_seqid == QSPI_CMD_PP_4B) {
+			wr_sfaddr = swab32(txbuf) & OFFSET_BITS_MASK;
 		} else if ((priv->cur_seqid == QSPI_CMD_BRWR) ||
-			 (priv->cur_seqid == QSPI_CMD_WREAR)) {
+			   (priv->cur_seqid == QSPI_CMD_WREAR)) {
 #ifdef CONFIG_SPI_FLASH_BAR
 			wr_sfaddr = 0;
 #endif
@@ -825,7 +832,8 @@ int qspi_xfer(struct fsl_qspi_priv *priv, unsigned int bitlen,
 	}
 
 	if (din) {
-		if (priv->cur_seqid == QSPI_CMD_FAST_READ) {
+		if ((priv->cur_seqid == QSPI_CMD_FAST_READ) ||
+		    (priv->cur_seqid == QSPI_CMD_FAST_READ_4B)) {
 #ifdef CONFIG_SYS_FSL_QSPI_AHB
 			qspi_ahb_read(priv, din, bytes);
 #else
@@ -833,10 +841,11 @@ int qspi_xfer(struct fsl_qspi_priv *priv, unsigned int bitlen,
 #endif
 		} else if (priv->cur_seqid == QSPI_CMD_RDAR) {
 			qspi_op_read(priv, din, bytes);
-		} else if (priv->cur_seqid == QSPI_CMD_RDID)
+		} else if (priv->cur_seqid == QSPI_CMD_RDID) {
 			qspi_op_rdid(priv, din, bytes);
-		else if (priv->cur_seqid == QSPI_CMD_RDSR)
+		} else if (priv->cur_seqid == QSPI_CMD_RDSR) {
 			qspi_op_rdsr(priv, din, bytes);
+		}
 #ifdef CONFIG_SPI_FLASH_BAR
 		else if ((priv->cur_seqid == QSPI_CMD_BRRD) ||
 			 (priv->cur_seqid == QSPI_CMD_RDEAR)) {
@@ -879,128 +888,7 @@ void qspi_cfg_smpr(struct fsl_qspi_priv *priv, u32 clear_bits, u32 set_bits)
 	smpr_val |= set_bits;
 	qspi_write32(priv->flags, &priv->regs->smpr, smpr_val);
 }
-#ifndef CONFIG_DM_SPI
-static unsigned long spi_bases[] = {
-	QSPI0_BASE_ADDR,
-#ifdef CONFIG_MX6SX
-	QSPI1_BASE_ADDR,
-#endif
-};
 
-static unsigned long amba_bases[] = {
-	QSPI0_AMBA_BASE,
-#ifdef CONFIG_MX6SX
-	QSPI1_AMBA_BASE,
-#endif
-};
-
-static inline struct fsl_qspi *to_qspi_spi(struct spi_slave *slave)
-{
-	return container_of(slave, struct fsl_qspi, slave);
-}
-
-struct spi_slave *spi_setup_slave(unsigned int bus, unsigned int cs,
-		unsigned int max_hz, unsigned int mode)
-{
-	struct fsl_qspi *qspi;
-	struct fsl_qspi_regs *regs;
-	u32 total_size;
-
-	if (bus >= ARRAY_SIZE(spi_bases))
-		return NULL;
-
-	if (cs >= FSL_QSPI_FLASH_NUM)
-		return NULL;
-
-	qspi = spi_alloc_slave(struct fsl_qspi, bus, cs);
-	if (!qspi)
-		return NULL;
-
-#ifdef CONFIG_SYS_FSL_QSPI_BE
-	qspi->priv.flags |= QSPI_FLAG_REGMAP_ENDIAN_BIG;
-#endif
-
-	regs = (struct fsl_qspi_regs *)spi_bases[bus];
-	qspi->priv.regs = regs;
-	/*
-	 * According cs, use different amba_base to choose the
-	 * corresponding flash devices.
-	 *
-	 * If not, only one flash device is used even if passing
-	 * different cs using `sf probe`
-	 */
-	qspi->priv.cur_amba_base = amba_bases[bus] + cs * FSL_QSPI_FLASH_SIZE;
-
-	qspi->slave.max_write_size = TX_BUFFER_SIZE;
-
-	qspi_write32(qspi->priv.flags, &regs->mcr,
-		     QSPI_MCR_RESERVED_MASK | QSPI_MCR_MDIS_MASK);
-
-	qspi_cfg_smpr(&qspi->priv,
-		      ~(QSPI_SMPR_FSDLY_MASK | QSPI_SMPR_DDRSMP_MASK |
-		      QSPI_SMPR_FSPHS_MASK | QSPI_SMPR_HSENA_MASK), 0);
-
-	total_size = FSL_QSPI_FLASH_SIZE * FSL_QSPI_FLASH_NUM;
-	/*
-	 * Any read access to non-implemented addresses will provide
-	 * undefined results.
-	 *
-	 * In case single die flash devices, TOP_ADDR_MEMA2 and
-	 * TOP_ADDR_MEMB2 should be initialized/programmed to
-	 * TOP_ADDR_MEMA1 and TOP_ADDR_MEMB1 respectively - in effect,
-	 * setting the size of these devices to 0.  This would ensure
-	 * that the complete memory map is assigned to only one flash device.
-	 */
-	qspi_write32(qspi->priv.flags, &regs->sfa1ad,
-		     FSL_QSPI_FLASH_SIZE | amba_bases[bus]);
-	qspi_write32(qspi->priv.flags, &regs->sfa2ad,
-		     FSL_QSPI_FLASH_SIZE | amba_bases[bus]);
-	qspi_write32(qspi->priv.flags, &regs->sfb1ad,
-		     total_size | amba_bases[bus]);
-	qspi_write32(qspi->priv.flags, &regs->sfb2ad,
-		     total_size | amba_bases[bus]);
-
-	qspi_set_lut(&qspi->priv);
-
-#ifdef CONFIG_SYS_FSL_QSPI_AHB
-	qspi_init_ahb_read(&qspi->priv);
-#endif
-
-	qspi_module_disable(&qspi->priv, 0);
-
-	return &qspi->slave;
-}
-
-void spi_free_slave(struct spi_slave *slave)
-{
-	struct fsl_qspi *qspi = to_qspi_spi(slave);
-
-	free(qspi);
-}
-
-int spi_claim_bus(struct spi_slave *slave)
-{
-	return 0;
-}
-
-void spi_release_bus(struct spi_slave *slave)
-{
-	/* Nothing to do */
-}
-
-int spi_xfer(struct spi_slave *slave, unsigned int bitlen,
-		const void *dout, void *din, unsigned long flags)
-{
-	struct fsl_qspi *qspi = to_qspi_spi(slave);
-
-	return qspi_xfer(&qspi->priv, bitlen, dout, din, flags);
-}
-
-void spi_init(void)
-{
-	/* Nothing to do */
-}
-#else
 static int fsl_qspi_child_pre_probe(struct udevice *dev)
 {
 	struct spi_slave *slave = dev_get_parent_priv(dev);
@@ -1012,17 +900,18 @@ static int fsl_qspi_child_pre_probe(struct udevice *dev)
 
 static int fsl_qspi_probe(struct udevice *bus)
 {
+	u32 mcr_val;
 	u32 amba_size_per_chip;
 	struct fsl_qspi_platdata *plat = dev_get_platdata(bus);
 	struct fsl_qspi_priv *priv = dev_get_priv(bus);
 	struct dm_spi_bus *dm_spi_bus;
-	int i;
+	int i, ret;
 
 	dm_spi_bus = bus->uclass_priv;
 
 	dm_spi_bus->max_hz = plat->speed_hz;
 
-	priv->regs = (struct fsl_qspi_regs *)(unsigned long)plat->reg_base;
+	priv->regs = (struct fsl_qspi_regs *)(uintptr_t)plat->reg_base;
 	priv->flags = plat->flags;
 
 	priv->speed_hz = plat->speed_hz;
@@ -1036,8 +925,23 @@ static int fsl_qspi_probe(struct udevice *bus)
 	priv->flash_num = plat->flash_num;
 	priv->num_chipselect = plat->num_chipselect;
 
+	/* make sure controller is not busy anywhere */
+	ret = is_controller_busy(priv);
+
+	if (ret) {
+		debug("ERROR : The controller is busy\n");
+		return ret;
+	}
+
+	mcr_val = qspi_read32(priv->flags, &priv->regs->mcr);
+
+	/* Set endianness to LE for i.mx */
+	if (IS_ENABLED(CONFIG_MX6) || IS_ENABLED(CONFIG_MX7))
+		mcr_val = QSPI_MCR_END_CFD_LE;
+
 	qspi_write32(priv->flags, &priv->regs->mcr,
-		     QSPI_MCR_RESERVED_MASK | QSPI_MCR_MDIS_MASK);
+		     QSPI_MCR_RESERVED_MASK | QSPI_MCR_MDIS_MASK |
+		     (mcr_val & QSPI_MCR_END_CFD_MASK));
 
 	qspi_cfg_smpr(priv, ~(QSPI_SMPR_FSDLY_MASK | QSPI_SMPR_DDRSMP_MASK |
 		QSPI_SMPR_FSPHS_MASK | QSPI_SMPR_HSENA_MASK), 0);
@@ -1068,8 +972,11 @@ static int fsl_qspi_probe(struct udevice *bus)
 	 * setting the size of these devices to 0.  This would ensure
 	 * that the complete memory map is assigned to only one flash device.
 	 */
-	qspi_write32(priv->flags, &priv->regs->sfa1ad, priv->amba_base[1]);
+	qspi_write32(priv->flags, &priv->regs->sfa1ad,
+		     priv->amba_base[0] + amba_size_per_chip);
 	switch (priv->num_chipselect) {
+	case 1:
+		break;
 	case 2:
 		qspi_write32(priv->flags, &priv->regs->sfa2ad,
 			     priv->amba_base[1]);
@@ -1109,7 +1016,7 @@ static int fsl_qspi_ofdata_to_platdata(struct udevice *bus)
 	struct fdt_resource res_regs, res_mem;
 	struct fsl_qspi_platdata *plat = bus->platdata;
 	const void *blob = gd->fdt_blob;
-	int node = bus->of_offset;
+	int node = dev_of_offset(bus);
 	int ret, flash_num = 0, subnode;
 
 	if (fdtdec_get_bool(blob, node, "big-endian"))
@@ -1129,7 +1036,7 @@ static int fsl_qspi_ofdata_to_platdata(struct udevice *bus)
 	}
 
 	/* Count flash numbers */
-	fdt_for_each_subnode(blob, subnode, node)
+	fdt_for_each_subnode(subnode, blob, node)
 		++flash_num;
 
 	if (flash_num == 0) {
@@ -1176,9 +1083,18 @@ static int fsl_qspi_claim_bus(struct udevice *dev)
 	struct fsl_qspi_priv *priv;
 	struct udevice *bus;
 	struct dm_spi_slave_platdata *slave_plat = dev_get_parent_platdata(dev);
+	int ret;
 
 	bus = dev->parent;
 	priv = dev_get_priv(bus);
+
+	/* make sure controller is not busy anywhere */
+	ret = is_controller_busy(priv);
+
+	if (ret) {
+		debug("ERROR : The controller is busy\n");
+		return ret;
+	}
 
 	priv->cur_amba_base = priv->amba_base[slave_plat->cs];
 
@@ -1223,6 +1139,8 @@ static const struct dm_spi_ops fsl_qspi_ops = {
 static const struct udevice_id fsl_qspi_ids[] = {
 	{ .compatible = "fsl,vf610-qspi" },
 	{ .compatible = "fsl,imx6sx-qspi" },
+	{ .compatible = "fsl,imx6ul-qspi" },
+	{ .compatible = "fsl,imx7d-qspi" },
 	{ }
 };
 
@@ -1237,4 +1155,3 @@ U_BOOT_DRIVER(fsl_qspi) = {
 	.probe	= fsl_qspi_probe,
 	.child_pre_probe = fsl_qspi_child_pre_probe,
 };
-#endif

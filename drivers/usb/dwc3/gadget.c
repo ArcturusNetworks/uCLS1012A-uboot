@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /**
  * gadget.c - DesignWare USB3 DRD Controller Gadget Framework Link
  *
@@ -10,19 +11,16 @@
  * to uboot.
  *
  * commit 8e74475b0e : usb: dwc3: gadget: use udc-core's reset notifier
- *
- * SPDX-License-Identifier:     GPL-2.0
  */
 
 #include <common.h>
 #include <malloc.h>
 #include <asm/dma-mapping.h>
-#include <usb/lin_gadget_compat.h>
+#include <linux/bug.h>
 #include <linux/list.h>
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
-#include <asm/arch/sys_proto.h>
 
 #include "core.h"
 #include "gadget.h"
@@ -2447,7 +2445,6 @@ static irqreturn_t dwc3_process_event_buf(struct dwc3 *dwc, u32 buf)
 	int left;
 	u32 reg;
 
-
 	evt = dwc->ev_buffs[buf];
 	left = evt->count;
 
@@ -2611,7 +2608,7 @@ int dwc3_gadget_init(struct dwc3 *dwc)
 	if (ret)
 		goto err4;
 
-	ret = usb_add_gadget_udc(dwc->dev, &dwc->gadget);
+	ret = usb_add_gadget_udc((struct device *)dwc->dev, &dwc->gadget);
 	if (ret) {
 		dev_err(dwc->dev, "failed to register udc\n");
 		goto err4;
@@ -2669,11 +2666,12 @@ void dwc3_gadget_uboot_handle_interrupt(struct dwc3 *dwc)
 		int i;
 		struct dwc3_event_buffer *evt;
 
+		dwc3_thread_interrupt(0, dwc);
+
+		/* Clean + Invalidate the buffers after touching them */
 		for (i = 0; i < dwc->num_event_buffers; i++) {
 			evt = dwc->ev_buffs[i];
 			dwc3_flush_cache((uintptr_t)evt->buf, evt->length);
 		}
-
-		dwc3_thread_interrupt(0, dwc);
 	}
 }

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /**
  * io.h - DesignWare USB3 DRD IO Header
  *
@@ -10,8 +11,6 @@
  * to uboot.
  *
  * commit 2c4cbe6e5a : usb: dwc3: add tracepoints to aid debugging
- *
- * SPDX-License-Identifier:     GPL-2.0
  *
  */
 
@@ -52,10 +51,4 @@ static inline void dwc3_flush_cache(uintptr_t addr, int length)
 {
 	flush_dcache_range(addr, addr + ROUND(length, CACHELINE_SIZE));
 }
-
-static inline void dwc3_inval_cache(uintptr_t addr, int length)
-{
-	invalidate_dcache_range(addr, addr + ROUND(length, CACHELINE_SIZE));
-}
-
 #endif /* __DRIVERS_USB_DWC3_IO_H */

@@ -1,12 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Command for accessing Arcturus factory environment.
  *
- * Copyright 2013-2017 Arcturus Networks Inc.
+ * Copyright 2013-2020 Arcturus Networks Inc.
  *           https://www.arcturusnetworks.com/products/
  *           by Oleksandr G Zhadan et al.
- *
- * SPDX-License-Identifier: GPL-2.0+ BSD-3-Clause
- *
  */
 
 #include <common.h>
@@ -14,6 +12,7 @@
 #include <malloc.h>
 #include <spi_flash.h>
 #include <version.h>
+#include <env.h>
 
 #include <asm/io.h>
 
@@ -36,6 +35,9 @@
 static struct spi_flash *flash;
 static char smac[4][18];
 
+#define MODULE_REV_ADDR 40
+char module_rev[4];
+
 static int ishwaddr(char *hwaddr)
 {
 	if (strlen(hwaddr) == MAX_HWADDR_SIZE)
@@ -46,6 +48,19 @@ static int ishwaddr(char *hwaddr)
 		    hwaddr[14] == ':')
 			return 0;
 	return -1;
+}
+
+void read_board_rev(void)
+{
+	flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
+				CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
+	if (flash)
+		if (!spi_flash_read(flash, MODULE_REV_ADDR, 4, module_rev))
+			if (module_rev[0] == 'R')
+				return;
+	strcpy(module_rev, (char *)"R14");
+
+	return;
 }
 
 int set_arc_product(int argc, char *const argv[])
@@ -142,8 +157,8 @@ static int read_arc_info(void)
 int get_arc_info(void)
 {
 	int l = read_arc_info();
-	char *oldserial = getenv("SERIAL");
-	char *oldversion = getenv("VERSION");
+	char *oldserial = env_get("SERIAL");
+	char *oldversion = env_get("VERSION");
 
 	if (oldversion != NULL)
 		if (strcmp(oldversion, U_BOOT_VERSION) != 0)
@@ -162,14 +177,14 @@ int get_arc_info(void)
 			printf("<not found>\n");
 		} else {
 			printf("%s\n", smac[0]);
-			setenv("SERIAL", smac[0]);
+			env_set("SERIAL", smac[0]);
 		}
 	}
 
 	if (strcmp(smac[1], "00:00:00:00:00:00") == 0) {
-		setenv("ethaddr", NULL);
-		setenv("eth1addr", NULL);
-		setenv("eth2addr", NULL);
+		env_set("ethaddr", NULL);
+		env_set("eth1addr", NULL);
+		env_set("eth2addr", NULL);
 		goto done;
 	}
 
@@ -177,10 +192,10 @@ int get_arc_info(void)
 	if (smac[1][0] == 0xFF) {
 		printf("<not found>\n");
 	} else {
-		char *ret = getenv("ethaddr");
+		char *ret = env_get("ethaddr");
 
 		if (strcmp(ret, __stringify(CONFIG_ETHADDR)) == 0) {
-			setenv("ethaddr", smac[1]);
+			env_set("ethaddr", smac[1]);
 			printf("%s (factory)\n", smac[1]);
 		} else {
 			printf("%s\n", ret);
@@ -188,8 +203,8 @@ int get_arc_info(void)
 	}
 
 	if (strcmp(smac[2], "00:00:00:00:00:00") == 0) {
-		setenv("eth1addr", NULL);
-		setenv("eth2addr", NULL);
+		env_set("eth1addr", NULL);
+		env_set("eth2addr", NULL);
 		goto done;
 	}
 
@@ -197,10 +212,10 @@ int get_arc_info(void)
 	if (smac[2][0] == 0xFF) {
 		printf("<not found>\n");
 	} else {
-		char *ret = getenv("eth1addr");
+		char *ret = env_get("eth1addr");
 
 		if (strcmp(ret, __stringify(CONFIG_ETH1ADDR)) == 0) {
-			setenv("eth1addr", smac[2]);
+			env_set("eth1addr", smac[2]);
 			printf("%s (factory)\n", smac[2]);
 		} else {
 			printf("%s\n", ret);
@@ -208,7 +223,7 @@ int get_arc_info(void)
 	}
 
 	if (strcmp(smac[3], "00:00:00:00:00:00") == 0) {
-		setenv("eth2addr", NULL);
+		env_set("eth2addr", NULL);
 		goto done;
 	}
 
@@ -216,10 +231,10 @@ int get_arc_info(void)
 	if (smac[3][0] == 0xFF) {
 		printf("<not found>\n");
 	} else {
-		char *ret = getenv("eth2addr");
+		char *ret = env_get("eth2addr");
 
 		if (strcmp(ret, __stringify(CONFIG_ETH2ADDR)) == 0) {
-			setenv("eth2addr", smac[3]);
+			env_set("eth2addr", smac[3]);
 			printf("%s (factory)\n", smac[3]);
 		} else {
 			printf("%s\n", ret);
@@ -227,9 +242,11 @@ int get_arc_info(void)
 	}
 done:
 	if (oldserial == NULL || oldversion == NULL) {
-		if (oldversion == NULL)
-			setenv("VERSION", U_BOOT_VERSION);
-		saveenv();
+		if (oldversion == NULL) {
+			env_set("VERSION", U_BOOT_VERSION);
+			env_set("board_rev", module_rev);
+		}
+		env_save();
 	}
 
 	return 0;

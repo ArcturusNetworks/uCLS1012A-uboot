@@ -1,51 +1,42 @@
-/* Copyright (C) 2016 Freescale Semiconductor Inc.
- *
- * SPDX-License-Identifier:GPL-2.0+
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Copyright 2015-2016 Freescale Semiconductor, Inc.
+ * Copyright 2017 NXP
  */
 
-/** @file
+/*
+ * @file
  *  Contains all the functions to handle parsing and loading of PE firmware
  * files.
  */
 
-#include "hal.h"
-#include "pfe_firmware.h"
-#include "pfe/pfe.h"
-
-
-/* CLASS-PE ELF file content */
-unsigned char class_fw_data[] __attribute__((aligned(sizeof(int)))) = {
-	#include CLASS_FIRMWARE_FILENAME
-};
-
-/* TMU-PE ELF file content */
-unsigned char tmu_fw_data[] __attribute__((aligned(sizeof(int)))) = {
-	#include TMU_FIRMWARE_FILENAME
-};
-
-#if !defined(CONFIG_UTIL_PE_DISABLED)
-unsigned char util_fw_data[] = {
-	#include UTIL_FIRMWARE_FILENAME
-};
+#include <net/pfe_eth/pfe_eth.h>
+#include <net/pfe_eth/pfe_firmware.h>
+#ifdef CONFIG_CHAIN_OF_TRUST
+#include <fsl_validate.h>
 #endif
 
-/** PFE elf firmware loader.
+#define PFE_FIRMEWARE_FIT_CNF_NAME	"config@1"
+
+static const void *pfe_fit_addr = (void *)CONFIG_SYS_LS_PFE_FW_ADDR;
+
+/*
+ * PFE elf firmware loader.
  * Loads an elf firmware image into a list of PE's (specified using a bitmask)
  *
  * @param pe_mask	Mask of PE id's to load firmware to
- * @param fw		Pointer to the firmware image
+ * @param pfe_firmware	Pointer to the firmware image
  *
- * @return		0 on sucess, a negative value on error
- *
+ * @return		0 on success, a negative value on error
  */
-int pfe_load_elf(int pe_mask, const struct firmware *fw)
+static int pfe_load_elf(int pe_mask, uint8_t *pfe_firmware)
 {
-	Elf32_Ehdr *elf_hdr = (Elf32_Ehdr *)fw->data;
+	Elf32_Ehdr *elf_hdr = (Elf32_Ehdr *)pfe_firmware;
 	Elf32_Half sections = be16_to_cpu(elf_hdr->e_shnum);
-	Elf32_Shdr *shdr = (Elf32_Shdr *) (fw->data +
+	Elf32_Shdr *shdr = (Elf32_Shdr *)(pfe_firmware +
 						be32_to_cpu(elf_hdr->e_shoff));
 	int id, section;
-	int rc;
+	int ret;
 
 	debug("%s: no of sections: %d\n", __func__, sections);
 
@@ -57,19 +48,19 @@ int pfe_load_elf(int pe_mask, const struct firmware *fw)
 
 	if (elf_hdr->e_ident[EI_CLASS] != ELFCLASS32) {
 		printf("%s: incorrect elf class(%x)\n", __func__,
-			elf_hdr->e_ident[EI_CLASS]);
+		       elf_hdr->e_ident[EI_CLASS]);
 		return -1;
 	}
 
 	if (elf_hdr->e_ident[EI_DATA] != ELFDATA2MSB) {
 		printf("%s: incorrect elf data(%x)\n", __func__,
-			elf_hdr->e_ident[EI_DATA]);
+		       elf_hdr->e_ident[EI_DATA]);
 		return -1;
 	}
 
 	if (be16_to_cpu(elf_hdr->e_type) != ET_EXEC) {
 		printf("%s: incorrect elf file type(%x)\n", __func__,
-			be16_to_cpu(elf_hdr->e_type));
+		       be16_to_cpu(elf_hdr->e_type));
 		return -1;
 	}
 
@@ -78,117 +69,190 @@ int pfe_load_elf(int pe_mask, const struct firmware *fw)
 			SHF_EXECINSTR)))
 			continue;
 		for (id = 0; id < MAX_PE; id++)
-			if (pe_mask & (1 << id)) {
-				rc = pe_load_elf_section(id, fw->data, shdr);
-				if (rc < 0)
+			if (pe_mask & BIT(id)) {
+				ret = pe_load_elf_section(id,
+							  pfe_firmware, shdr);
+				if (ret < 0)
 					goto err;
 			}
 	}
-
 	return 0;
 
 err:
-	return rc;
+	return ret;
 }
 
-/** PFE firmware initialization.
- * Loads different firmware files from filesystem.
+/*
+ * Get PFE firmware from FIT image
+ *
+ * @param data pointer to PFE firmware
+ * @param size pointer to size of the firmware
+ * @param fw_name pfe firmware name, either class or tmu
+ *
+ * @return 0 on success, a negative value on error
+ */
+static int pfe_get_fw(const void **data,
+		      size_t *size, char *fw_name)
+{
+	int conf_node_off, fw_node_off;
+	char *conf_node_name = NULL;
+	char *desc;
+	int ret = 0;
+
+	conf_node_name = PFE_FIRMEWARE_FIT_CNF_NAME;
+
+	conf_node_off = fit_conf_get_node(pfe_fit_addr, conf_node_name);
+	if (conf_node_off < 0) {
+		printf("PFE Firmware: %s: no such config\n", conf_node_name);
+		return -ENOENT;
+	}
+
+	fw_node_off = fit_conf_get_prop_node(pfe_fit_addr, conf_node_off,
+					     fw_name);
+	if (fw_node_off < 0) {
+		printf("PFE Firmware: No '%s' in config\n",
+		       fw_name);
+		return -ENOLINK;
+	}
+
+	if (!(fit_image_verify(pfe_fit_addr, fw_node_off))) {
+		printf("PFE Firmware: Bad firmware image (bad CRC)\n");
+		return -EINVAL;
+	}
+
+	if (fit_image_get_data(pfe_fit_addr, fw_node_off, data, size)) {
+		printf("PFE Firmware: Can't get %s subimage data/size",
+		       fw_name);
+		return -ENOENT;
+	}
+
+	ret = fit_get_desc(pfe_fit_addr, fw_node_off, &desc);
+	if (ret)
+		printf("PFE Firmware: Can't get description\n");
+	else
+		printf("%s\n", desc);
+
+	return ret;
+}
+
+/*
+ * Check PFE FIT image
+ *
+ * @return 0 on success, a negative value on error
+ */
+static int pfe_fit_check(void)
+{
+	int ret = 0;
+
+	ret = fdt_check_header(pfe_fit_addr);
+	if (ret) {
+		printf("PFE Firmware: Bad firmware image (not a FIT image)\n");
+		return ret;
+	}
+
+	if (!fit_check_format(pfe_fit_addr)) {
+		printf("PFE Firmware: Bad firmware image (bad FIT header)\n");
+		ret = -1;
+		return ret;
+	}
+
+	return ret;
+}
+
+/*
+ * PFE firmware initialization.
+ * Loads different firmware files from FIT image.
  * Initializes PE IMEM/DMEM and UTIL-PE DDR
  * Initializes control path symbol addresses (by looking them up in the elf
  * firmware files
  * Takes PE's out of reset
  *
- * @return	0 on sucess, a negative value on error
- *
+ * @return 0 on success, a negative value on error
  */
-int pfe_firmware_init(u8 *class_fw_loc, u8 *tmu_fw_loc, u8 *util_fw_loc)
+int pfe_firmware_init(void)
 {
-	struct firmware class_fw, tmu_fw;
-#if !defined(CONFIG_UTIL_PE_DISABLED)
-	struct firmware util_fw;
+#define PFE_KEY_HASH	NULL
+	char *pfe_firmware_name;
+	const void *raw_image_addr;
+	size_t raw_image_size = 0;
+	u8 *pfe_firmware;
+#ifdef CONFIG_CHAIN_OF_TRUST
+	uintptr_t pfe_esbc_hdr = 0;
+	uintptr_t pfe_img_addr = 0;
 #endif
-	int rc = 0;
+	int ret = 0;
+	int fw_count;
 
-	printf("%s: ", __func__);
-#if 0
-	/* This testing purpose only */
-	printf("Copying default fw\n");
-	memcpy(class_fw_loc, class_fw_data, sizeof(class_fw_data));
-	memcpy(tmu_fw_loc, tmu_fw_data, sizeof(tmu_fw_data));
-	memcpy(util_fw_loc, util_fw_data, sizeof(util_fw_data));
-#endif
+	ret = pfe_fit_check();
+	if (ret)
+		goto err;
 
-	if (class_fw_loc)
-		class_fw.data = class_fw_loc;
-	else
-		class_fw.data = class_fw_data;
-
-	if (tmu_fw_loc)
-		tmu_fw.data = tmu_fw_loc;
-	else
-		tmu_fw.data = tmu_fw_data;
-
-#if !defined(CONFIG_UTIL_PE_DISABLED)
-	if (util_fw_loc)
-		util_fw.data = util_fw_loc;
-	else
-		util_fw.data = util_fw_data;
-#endif
-
-	rc = pfe_load_elf(CLASS_MASK, &class_fw);
-	if (rc < 0) {
-		printf("%s: class firmware load failed\n", __func__);
-		goto err3;
+#ifdef CONFIG_CHAIN_OF_TRUST
+	pfe_esbc_hdr = CONFIG_SYS_LS_PFE_ESBC_ADDR;
+	pfe_img_addr = (uintptr_t)pfe_fit_addr;
+	if (fsl_check_boot_mode_secure() != 0) {
+		/*
+		 * In case of failure in validation, fsl_secboot_validate
+		 * would not return back in case of Production environment
+		 * with ITS=1. In Development environment (ITS=0 and
+		 * SB_EN=1), the function may return back in case of
+		 * non-fatal failures.
+		 */
+		ret = fsl_secboot_validate(pfe_esbc_hdr,
+					   PFE_KEY_HASH,
+					   &pfe_img_addr);
+		if (ret != 0)
+			printf("PFE firmware(s) validation failed\n");
+		else
+			printf("PFE firmware(s) validation Successful\n");
 	}
-	debug("%s: class firmware loaded\n", __func__);
-
-	rc = pfe_load_elf(TMU_MASK, &tmu_fw);
-	if (rc < 0) {
-		printf("%s: tmu firmware load failed\n", __func__);
-		goto err3;
-	}
-	debug("%s: tmu firmware loaded\n", __func__);
-
-	printf("done\n");
-
-#if !defined(CONFIG_UTIL_PE_DISABLED)
-	rc = pfe_load_elf(UTIL_MASK, &util_fw);
-	if (rc < 0) {
-		printf("%s: util firmware load failed\n", __func__);
-		goto err3;
-	}
-	printf("%s: util firmware loaded\n", __func__);
-
-	util_enable();
 #endif
 
-#if defined(CONFIG_LS1012A)
+	for (fw_count = 0; fw_count < 2; fw_count++) {
+		if (fw_count == 0)
+			pfe_firmware_name = "class";
+		else if (fw_count == 1)
+			pfe_firmware_name = "tmu";
+
+		pfe_get_fw(&raw_image_addr, &raw_image_size, pfe_firmware_name);
+		pfe_firmware = malloc(raw_image_size);
+		if (!pfe_firmware)
+			return -ENOMEM;
+		memcpy((void *)pfe_firmware, (void *)raw_image_addr,
+		       raw_image_size);
+
+		if (fw_count == 0)
+			ret = pfe_load_elf(CLASS_MASK, pfe_firmware);
+		else if (fw_count == 1)
+			ret = pfe_load_elf(TMU_MASK, pfe_firmware);
+
+		if (ret < 0) {
+			printf("%s: %s firmware load failed\n", __func__,
+			       pfe_firmware_name);
+			goto err;
+		}
+		debug("%s: %s firmware loaded\n", __func__, pfe_firmware_name);
+		free(pfe_firmware);
+	}
+
 	tmu_enable(0xb);
-#else
-	tmu_enable(0xf);
-#endif
 	class_enable();
-
 	gpi_enable(HGPI_BASE_ADDR);
 
-err3:
-	return rc;
+err:
+	return ret;
 }
 
-/** PFE firmware cleanup
+/*
+ * PFE firmware cleanup
  * Puts PE's in reset
- *
- *
  */
 void pfe_firmware_exit(void)
 {
-	printf("%s\n", __func__);
+	debug("%s\n", __func__);
 
 	class_disable();
 	tmu_disable(0xf);
-#if !defined(CONFIG_UTIL_PE_DISABLED)
-	util_disable();
-#endif
 	hif_tx_disable();
 	hif_rx_disable();
 }
