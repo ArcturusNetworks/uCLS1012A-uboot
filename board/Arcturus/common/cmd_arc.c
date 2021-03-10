@@ -128,30 +128,47 @@ int set_arc_product(int argc, char *const argv[])
 
 static int read_arc_info(void)
 {
+	int ret = 0;
 	flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
 				CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
 	if (!flash) {
 		printf("Failed to initialize SPI flash at %u:%u\n", CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS);
-		return 0;
+		return ret;
 	}
 
 #ifdef CONFIG_FIRM_ADDR1
-	if (!spi_flash_read(flash, CONFIG_FIRM_ADDR1, sizeof(smac), smac))
-		return 1;
+	if (!spi_flash_read(flash, CONFIG_FIRM_ADDR1, sizeof(smac), smac)) {
+		if (smac[0][0] != 0xFF)
+			return 1;
+		else
+			ret = -1;
+	}
 #endif
 #ifdef CONFIG_FIRM_ADDR2
-	if (!spi_flash_read(flash, CONFIG_FIRM_ADDR2, sizeof(smac), smac))
-		return 2;
+	if (!spi_flash_read(flash, CONFIG_FIRM_ADDR2, sizeof(smac), smac)) {
+		if (smac[0][0] != 0xFF)
+			return 2;
+		else
+			ret = -2;
+	}
 #endif
 #ifdef CONFIG_FIRM_ADDR3
-	if (!spi_flash_read(flash, CONFIG_FIRM_ADDR3, sizeof(smac), smac))
-		return 3;
+	if (!spi_flash_read(flash, CONFIG_FIRM_ADDR3, sizeof(smac), smac)) {
+		if (smac[0][0] != 0xFF)
+			return 3;
+		else
+			ret = -3;
+	}
 #endif
 #ifdef CONFIG_FIRM_ADDR4
-	if (!spi_flash_read(flash, CONFIG_FIRM_ADDR4, sizeof(smac), smac))
-		return 4;
+	if (!spi_flash_read(flash, CONFIG_FIRM_ADDR4, sizeof(smac), smac)) {
+		if (smac[0][0] != 0xFF)
+			return 4;
+		else
+			ret = -4;
+	}
 #endif
-	return 0;
+	return ret;
 }
 
 int get_arc_info(void)
@@ -169,7 +186,7 @@ int get_arc_info(void)
 	else if (l == 0) {
 		printf("%s: failed to read factory info\n", __func__);
 		return -2;
-		}
+	}
 
 	if (smac[0][0] != 0) {
 		printf("SERIAL:  ");

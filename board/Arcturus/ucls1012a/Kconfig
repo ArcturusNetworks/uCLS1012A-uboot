@@ -64,11 +64,11 @@ config BOARD_SPECIFIC_OPTIONS # dummy
 
 config DDR_PFE_PHYS_BASEADDR
 	hex "PFE DDR physical base address"
-	default 0x03800000
+	default 0x03400000
 
 config DDR_PFE_BASEADDR
 	hex "PFE DDR base address"
-	default 0x83800000
+	default 0x83400000
 
 config PFE_EMAC1_PHY_ADDR
 	hex "PFE DDR base address"

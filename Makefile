@@ -1064,7 +1064,7 @@ endif
 	@echo >&2 "    and RCW + PFE + U-BOOT single u-boot-big.bin"
 	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/rcw_800.bin.swapped rcw_ff.bin
 	@cat rcw_ff.bin board/Arcturus/ucls1012a/bin/pfe_fw_sbl.itb.swaped > u-boot-rcw-pfe.bin
-	@objcopy -F binary --pad-to=0xE0000 --gap-fill=0xff u-boot-rcw-pfe.bin rcw-pfe_ff.bin
+	@objcopy -F binary --pad-to=0x100000 --gap-fill=0xff u-boot-rcw-pfe.bin rcw-pfe_ff.bin
 	@cat rcw-pfe_ff.bin u-boot.bin > u-boot-big.bin
 	@rm -f rcw_ff.bin rcw-pfe_ff.bin
 	@echo >&2 "===================================================="
