@@ -61,7 +61,11 @@
 
 #undef FSL_QSPI_FLASH_SIZE
 #ifdef CONFIG_SPI_FLASH_128M
+#ifdef CONFIG_SUBTARGET_DONGLE
+#define FSL_QSPI_FLASH_SIZE		SZ_64M
+#else
 #define FSL_QSPI_FLASH_SIZE		SZ_128M
+#endif
 #else
 #define FSL_QSPI_FLASH_SIZE		SZ_64M
 #endif
@@ -126,7 +130,6 @@
 	"initrd_high=0xffffffff\0"				\
 	"verify=no\0"						\
 	"hwconfig=fsl_ddr:bank_intlv=auto\0"			\
-	"loadaddr=0x80100000\0"					\
 	"part0base=" __stringify(ADDRESS_PART0) "\0"		\
 	"part0size=" __stringify(SIZE_PART0) "\0"		\
 	"partBbase=" __stringify(ADDRESS_PARTB) "\0"		\
@@ -141,7 +144,7 @@
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
 	"kargs_rootdev=root=/dev/mtdblock1\0"			\
-	"kargs_misc=rootfstype=cramfs\0"			\
+	"kargs_misc=rootfstype=cramfs,squashfs\0"		\
 	"kargs_misc2=quiet lpj=250000\0"			\
 	"kernel_load=0x96000000\0"				\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
@@ -153,10 +156,7 @@
 		"pfe stop; "					\
 		"run kargs; "					\
 		"bootm $kernel_load\0"				\
-	"iprogram=tftp part0-000000.itb; sf probe 0:0; "	\
-		"sf erase $part0base +$part0size; "		\
-		"sf write $loadaddr $part0base $filesize\0"	\
-	"program0=sf probe 0:0; "				\
+	"program0=sf probe 0:0;"				\
 		"sf erase $part0base +$part0size; "		\
 		"sf write $loadaddr $part0base $filesize\0"	\
 	"program_rcw=sf probe 0:0; "				\
@@ -232,7 +232,7 @@
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
 	"kargs_rootdev=root=/dev/mtdblock1\0"			\
-	"kargs_misc=rootfstype=cramfs\0"			\
+	"kargs_misc=rootfstype=cramfs,squashfs\0"		\
 	"kernel_load=0x96000000\0"				\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
 		"$kargs_rootdev $kargs_misc $kargs_parts\0"	\
@@ -242,41 +242,34 @@
 		"pfe stop; "					\
 		"run kargs; "					\
 		"bootm $kernel_load\0"				\
-	"iprogram=tftp part0-000000.itb; sf probe 0:0; "	\
-		"sf erase $part0base +$filesize; "		\
-		"sf write $loadaddr $part0base $filesize\0"	\
-	"program0=if run dl_part0; then sf probe 0:0; "		\
+	"program0=sf probe 0:0; "				\
 		"sf erase $part0base +$part0size; "		\
-		"sf write $loadaddr $part0base $filesize; "	\
-		"else echo TFTP ERROR; fi\0"			\
-	"program1=if run dl_part1; then sf probe 0:0; "		\
+		"sf write $loadaddr $part0base $filesize\0 "	\
+	"program1=sf probe 0:0; "				\
 		"sf erase $part1base +$part1size; "		\
-		"sf write $loadaddr $part1base $filesize;"	\
-		"else echo TFTP ERROR; fi\0"			\
-	"program2=if run dl_part2; then sf probe 0:0; "		\
+		"sf write $loadaddr $part1base $filesize\0"	\
+	"program2=sf probe 0:0; "				\
 		"sf erase $part2base +$part2size; "		\
-		"sf write $loadaddr $part2base $filesize; "	\
-		"else echo TFTP ERROR; fi\0"			\
-	"program3=if run dl_part3; then sf probe 0:0; "		\
+		"sf write $loadaddr $part2base $filesize\0 "	\
+	"program3=sf probe 0:0; "				\
 		"sf erase $part3base +$part3size; "		\
-		"sf write $loadaddr $part3base $filesize; "	\
-		"else echo TFTP ERROR; fi\0"			\
+		"sf write $loadaddr $part3base $filesize\0 "	\
 	"format3=sf probe 0:0; "				\
 		"sf erase $part3base +$part3size \0"		\
-	"program_rcw=if run dl_rcw; then sf probe 0:0; "	\
+	"program_rcw=sf probe 0:0; "	\
 		"sf protect unlock $rcwbase $rcwsize; "		\
 		"sf erase $rcwbase $rcwsize; "			\
-		"sf write $loadaddr $rcwbase $filesize; "	\
-		"else echo TFTP ERROR; fi\0"			\
-	"program_pfe=if run dl_pfe; then sf probe 0:0; "	\
+		"sf write $loadaddr $rcwbase $filesize\0"	\
+	"program_firmware=sf probe 0:0; "	\
+		"sf erase $rcwbase +$filesize; "		\
+		"sf write $loadaddr $rcwbase $filesize\0"	\
+	"program_pfe=sf probe 0:0; "	\
 		"sf protect unlock $pfebase $pfesize; "		\
 		"sf erase $pfebase $pfesize; "			\
-		"sf write $loadaddr $pfebase $filesize; "	\
-		"else echo TFTP ERROR; fi\0"			\
-	"program_uboot=if run dl_uboot; then sf probe 0:0; "	\
+		"sf write $loadaddr $pfebase $filesize\0 "	\
+	"program_uboot=sf probe 0:0; "	\
 		"sf erase $partBbase +$partBsize; "		\
-		"sf write $loadaddr $partBbase $filesize; "	\
-		"else echo TFTP ERROR; fi\0"			\
+		"sf write $loadaddr $partBbase $filesize\0 "	\
 	"fn_rcw=ucls1012a_201904/rcw.bin\0"			\
 	"fn_pfe=ucls1012a_201904/pfe.bin\0"			\
 	"fn_uboot=ucls1012a_201904/u-boot.bin\0"		\
@@ -293,23 +286,73 @@
 	"dl_part3=tftp $fn_part3\0"				\
 	"erase_all=sf probe; sf erase 0 +0x8000000\0"		\
 	"erase_all_64=sf probe; sf erase 0 +0x4000000\0"	\
-	"program_all=run program_uboot; "			\
-		"run program1; "				\
-		"run program2; "				\
-		"run format3; "					\
-		"run program0; sleep 3; "			\
-		"run program_pfe; sleep 1;"			\
-		"run program_rcw; sleep 1\0"			\
-	"program_all_64=run part64; run fn64; "			\
+	"console=ttyS0,115200n8\0"				\
+	"prog_dev=usb\0"						\
+	"USBB=echo $PROD:firmware/boot.bin;"			\
+	   "load usb $USBID $loadaddr firmware/boot-firmware.bin; &&" \
+	   "run program_firmware; &&"				\
+	   "load usb $USBID $loadaddr firmware/boot.bin; &&"	\
+	   "run program_uboot\0"				\
+	"USB0=echo $PROD:firmware/part0-000000.itb;"		\
+	   "load usb $USBID $loadaddr firmware/part0-000000.itb; &&" \
+	   "run program0\0"					\
+	"USB1=echo $PROD:firmware/part1-00000a.bin;"		\
+	   "load usb $USBID $loadaddr firmware/part1-00000s.bin; &&" \
+	   "run program1\0"					\
+	"USB2=echo $PROD:firmware/part2-00000a.bin;"		\
+	   "load usb $USBID $loadaddr firmware/part2-00000s.bin; &&" \
+	   "run program2\0"					\
+	"TFTPB=echo $PDIR/boot.bin;"			\
+	   "tftp $PDIR/boot-firmware.bin; &&" 			\
+	   "run program_firmware; &&"				\
+	   "tftp $PDIR/boot.bin; &&"				\
+	   "run program_uboot\0"				\
+	"TFTP0=echo $PDIR/part0-000000.itb;"		\
+	   "tftp $PDIR/part0-000000.itb; &&"			\
+	   "run program0\0"					\
+	"TFTP1=echo $PDIR/part1-00000a.bin;"		\
+	   "tftp $PDIR/part1-00000s.bin; &&" 			\
+	   "run program1\0"					\
+	"TFTP2=echo $PDIR/part2-00000a.bin;"		\
+	   "tftp $PDIR/part2-00000s.bin; &&" 			\
+	   "run program2\0"					\
+	"GRXVP=setenv PROD GRXVP;"				\
+		"setenv PDIR GRXVP;"				\
+		"setenv USBID 0:1;"				\
 		"run program_all\0"				\
-	"fn64=setenv fn_rcw $fn_rcw.64; "			\
-		"setenv fn_uboot $fn_uboot.64; "		\
-		"setenv fn_part0 $fn_part0.64; "		\
-		"setenv fn_part1 $fn_part1.64; "		\
-		"setenv fn_part2 $fn_part2.64\0"		\
-	"part64=setenv part1size 0x2580000; "			\
-		"setenv part2base 0x3780000; "			\
-		"setenv part3base 0x380000\0" 			\
+	"MBARXSC=setenv PROD MBARXSC;"				\
+		"setenv PDIR MBARXSC;"				\
+		"setenv USBID 0:2;"				\
+		"run program_all\0"				\
+	"SOM=setenv PROD uCls1012a-SOM;"			\
+		"setenv PDIR UCLS1012A_SOM;"			\
+		"setenv USBID 0:2;"				\
+		"run program_all\0"				\
+	"SOM120=setenv PROD uCls1012a-SOM120;"			\
+		"setenv PDIR UCLS1012A_SOM120;"			\
+		"setenv USBID 0:2;"				\
+		"run program_all\0"				\
+	"program_all_usb=echo !!!!!!!!!!!!!!!!!!!!!!!!!!;"	\
+		"echo !   Program from USB     !;"		\
+		"echo !!!!!!!!!!!!!!!!!!!!!!!!!!;"		\
+		"run USBB;"					\
+		"run USB0;"					\
+		"run USB1;"					\
+		"run USB2;\0"					\
+	"program_all_tftp=echo !!!!!!!!!!!!!!!!!!!!!!!!!!;"	\
+		"echo !   Program from TFTP    !;"		\
+		"echo !!!!!!!!!!!!!!!!!!!!!!!!!!;"		\
+		"run TFTPB;"					\
+		"run TFTP0;"					\
+		"run TFTP1;"					\
+		"run TFTP2;\0"					\
+	"program_all=echo Start;"				\
+		"if test $prog_dev = tftp; then "		\
+			"run program_all_tftp;"			\
+		"else "						\
+			"usb start;"				\
+			"run program_all_usb;"			\
+		"fi; \0"					\
 	"console=ttyS0,115200n8\0"
 
 #else
@@ -362,7 +405,7 @@
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
 	"kargs_rootdev=root=/dev/mtdblock1\0"			\
-	"kargs_misc=rootfstype=cramfs\0"			\
+	"kargs_misc=rootfstype=cramfs,squashfs\0"		\
 	"kargs_misc2=quiet lpj=250000\0"			\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
 		"$kargs_rootdev $kargs_misc $kargs_parts "	\
@@ -373,9 +416,6 @@
 		"pfe stop; "					\
 		"run kargs; "					\
 		"bootm $kernel_load\0"				\
-	"iprogram=tftp part0-000000.itb; sf probe 0:0; "	\
-		"sf erase $part0base +$filesize; "		\
-		"sf write $loadaddr $part0base $filesize\0"	\
 	"program0=sf probe 0:0; "				\
 		"sf erase $part0base +$part0size; "		\
 		"sf write $loadaddr $part0base $filesize\0"	\

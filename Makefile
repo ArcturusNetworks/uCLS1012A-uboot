@@ -1053,17 +1053,11 @@ endif
 	@# know about unless they are in Kconfig. All the existing CONFIG
 	@# options are whitelisted, so new ones should not be added.
 	$(call cmd,cfgcheck,u-boot.cfg)
-	@echo >&2 "===================== N O T E ======================"
-	@echo >&2 "        This build does require byte_swap64"
-	@echo >&2 "               and let's do it"
-	@echo >&2 "  tools/byte_swap64 u-boot-dtb.bin u-boot.bin"
-	@tools/byte_swap64 u-boot-dtb.bin u-boot-qspi.bin
-	@mv -f u-boot-qspi.bin u-boot.bin
 	@echo >&2 "===================================================="
 	@echo >&2 "      Make RCW + PFE single u-boot-rcw-pfe.bin"
 	@echo >&2 "    and RCW + PFE + U-BOOT single u-boot-big.bin"
-	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/rcw_800.bin.swapped rcw_ff.bin
-	@cat rcw_ff.bin board/Arcturus/ucls1012a/bin/pfe_fw_sbl.itb.swaped > u-boot-rcw-pfe.bin
+	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/rcw_600.bin.swapped rcw_ff.bin
+	@cat rcw_ff.bin board/Arcturus/ucls1012a/bin/pfe_fw_sbl.itb > u-boot-rcw-pfe.bin
 	@objcopy -F binary --pad-to=0x100000 --gap-fill=0xff u-boot-rcw-pfe.bin rcw-pfe_ff.bin
 	@cat rcw-pfe_ff.bin u-boot.bin > u-boot-big.bin
 	@rm -f rcw_ff.bin rcw-pfe_ff.bin

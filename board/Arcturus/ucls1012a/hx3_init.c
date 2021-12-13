@@ -24,7 +24,7 @@ const uint8_t hx3_settings[5 + HX3_SETTINGS_SIZE] = { /* Arcturus default */
 	0x04, 0x65, /* PID */
 	00, 50, /* DID */
 	0x00, /* [11] - Reserved */
-	0x0d, /* [12] - USB3 enable 0x0f - all USB3, 0x0d - all USB3, but DS2 is USB2 only */
+	0x00, /* [12] - USB3 enable 0x0f - all USB3, 0x0d - all USB3, but DS2 is USB2 only */
 	0x32, /* bPwrOn2PwrGood : 100 ms */
 	0xdf, /* [14] 4 Downstream ports : DS2 is non-removable (MCU) */
 	0xf0, /* [15] individual port power switching */
