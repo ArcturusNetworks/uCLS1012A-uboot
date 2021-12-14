@@ -112,10 +112,21 @@
 #define ADDRESS_PFE	0x20000
 #define SIZE_PFE	0x20000
 
-#ifdef CONFIG_SUBTARGET_SOM
+#if defined(CONFIG_SUBTARGET_SOM) || defined(CONFIG_SUBTARGET_SOM120)
 #define ADDRESS_PART0 0x00A00000
-#define SIZE_PART0    0x07600000
-#define MAX_PARTS_NUM 3
+#define ADDRESS_PART1 0x01200000
+#define SIZE_PART0    0x00800000
+#define SIZE_PART2    0x00080000
+#define MAX_PARTS_NUM 5
+
+#ifdef CONFIG_SPI_FLASH_128M
+	#define SIZE_PART1    0x06600000
+	#define ADDRESS_PART2 0x07800000
+#else
+	#define SIZE_PART1    0x02600000
+	#define ADDRESS_PART2 0x03800000
+#endif
+
 
 #undef CONFIG_EXTRA_ENV_SETTINGS
 #define CONFIG_EXTRA_ENV_SETTINGS				\
@@ -132,6 +143,10 @@
 	"hwconfig=fsl_ddr:bank_intlv=auto\0"			\
 	"part0base=" __stringify(ADDRESS_PART0) "\0"		\
 	"part0size=" __stringify(SIZE_PART0) "\0"		\
+	"part1base=" __stringify(ADDRESS_PART1) "\0"		\
+	"part1size=" __stringify(SIZE_PART1) "\0"		\
+	"part2base=" __stringify(ADDRESS_PART2) "\0"		\
+	"part2size=" __stringify(SIZE_PART2) "\0"		\
 	"partBbase=" __stringify(ADDRESS_PARTB) "\0"		\
 	"partBsize=" __stringify(SIZE_PARTB) "\0"		\
 	"partEbase=" __stringify(ADDRESS_PARTE) "\0"		\
@@ -159,16 +174,14 @@
 	"program0=sf probe 0:0;"				\
 		"sf erase $part0base +$part0size; "		\
 		"sf write $loadaddr $part0base $filesize\0"	\
-	"program_rcw=sf probe 0:0; "				\
-		"sf protect unlock $rcwbase $rcwsize; "		\
-		"sf erase $rcwbase $rcwsize; "			\
-		"sf write $loadaddr $rcwbase $filesize; "	\
-		"sf protect lock $rcwbase $rcwsize\0"		\
-	"program_pfe=sf probe 0:0; "				\
-		"sf protect unlock $pfebase $pfesize; "		\
-		"sf erase $pfebase $pfesize; "			\
-		"sf write $loadaddr $pfebase $filesize; "	\
-		"sf protect lock $pfebase $pfesize\0"		\
+	"program1=sf probe 0:0;"				\
+		"sf erase $part1base +$part1size; "		\
+		"sf write $loadaddr $part1base $filesize\0"	\
+	"format2=sf probe 0:0;"					\
+		"sf erase $part2base +$part2size\0"		\
+	"program_fitmware=sf probe 0:0; "			\
+		"sf erase $rcwbase +$filesize; "		\
+		"sf write $loadaddr $rcwbase $filesize\0"	\
 	"program_uboot=sf probe 0:0; "				\
 		"sf erase $partBbase +$partBsize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
