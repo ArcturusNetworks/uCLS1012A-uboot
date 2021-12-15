@@ -183,7 +183,7 @@
 		"sf write $loadaddr $part1base $filesize\0"	\
 	"format2=sf probe 0:0;"					\
 		"sf erase $part2base +$part2size\0"		\
-	"program_fitmware=sf probe 0:0; "			\
+	"program_firmware=sf probe 0:0; "			\
 		"sf erase $rcwbase +$filesize; "		\
 		"sf write $loadaddr $rcwbase $filesize\0"	\
 	"program_uboot=sf probe 0:0; "				\
