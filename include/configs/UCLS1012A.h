@@ -163,7 +163,7 @@
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
 	"kargs_rootdev=root=/dev/mtdblock1\0"			\
-	"kargs_misc=rootfstype=cramfs,squashfs\0"		\
+	"kargs_misc=rootfstype=cramfs,squashfs,jffs2\0"		\
 	"kargs_misc2=quiet lpj=250000\0"			\
 	"kernel_load=0x96000000\0"				\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
@@ -249,7 +249,7 @@
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
 	"kargs_rootdev=root=/dev/mtdblock1\0"			\
-	"kargs_misc=rootfstype=cramfs,squashfs\0"		\
+	"kargs_misc=rootfstype=cramfs,squashfs,jffs2\0"		\
 	"kernel_load=0x96000000\0"				\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
 		"$kargs_rootdev $kargs_misc $kargs_parts\0"	\
@@ -422,7 +422,7 @@
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
 	"kargs_rootdev=root=/dev/mtdblock1\0"			\
-	"kargs_misc=rootfstype=cramfs,squashfs\0"		\
+	"kargs_misc=rootfstype=cramfs,squashfs,jffs2\0"		\
 	"kargs_misc2=quiet lpj=250000\0"			\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
 		"$kargs_rootdev $kargs_misc $kargs_parts "	\
