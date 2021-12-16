@@ -15,14 +15,14 @@ config SYS_CONFIG_NAME
 choice
 	prompt "SubTarget image select"
 
+config SUBTARGET_SOM314
+	bool "314 SOM Host"
+
 config SUBTARGET_SOM
 	bool "Base UCLS1012A-SOM image"
 
 config SUBTARGET_SOM120
 	bool "Base UCLS1012A-SOM120 image"
-
-config SUBTARGET_SOM314
-	bool "314 SOM Host"
 
 config SUBTARGET_DONGLE
 	bool "UCLS1012A-SOM image for Programming Dongle"
