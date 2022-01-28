@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018-2020 Arcturus Networks, Inc.
+ * Copyright 2018-2022 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/ucls1012a/
  */
 
@@ -23,22 +23,24 @@
 #define DEFAULT_PFE_MDIO_NAME "PFE_MDIO"
 #define DEFAULT_PFE_MDIO1_NAME "PFE_MDIO1"
 
-#define MASK_ETH_PHY_RST	0x00000100
+#define MASK_ETH_PHYA_RST	0x400
+#define MASK_ETH_PHYB_RST	0x200
 
 static inline void ucls1012a_reset_phy(void)
 {
-#if 0
-	unsigned int val;
+#ifdef CONFIG_SUBTARGET_SOM120
+	unsigned int val, mask;
 	struct ccsr_gpio *pgpio = (void *)(GPIO1_BASE_ADDR);
 
-	setbits_be32(&pgpio->gpdir, MASK_ETH_PHY_RST);
+	mask = (MASK_ETH_PHYA_RST | MASK_ETH_PHYB_RST);
+	setbits_be32(&pgpio->gpdir, mask);
 
 	val = in_be32(&pgpio->gpdat);
-	setbits_be32(&pgpio->gpdat, val & ~MASK_ETH_PHY_RST);
+	setbits_be32(&pgpio->gpdat, val & ~mask);
 	mdelay(10);
 
 	val = in_be32(&pgpio->gpdat);
-	setbits_be32(&pgpio->gpdat, val | MASK_ETH_PHY_RST);
+	setbits_be32(&pgpio->gpdat, val | mask);
 	mdelay(50);
 #endif
 }

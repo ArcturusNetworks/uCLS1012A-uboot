@@ -216,7 +216,7 @@
 #define CONFIG_EXTRA_ENV_SETTINGS			\
 	"bootcmd=echo; echo B$ run erase_all; echo; "	\
 		"echo Run erase_all only to recover pre-program modules; echo; echo;" \
-		"echo B$ run program_all; echo;"	\
+		"echo B$ run <GRXVP or MBARXSC or SOM>; echo;"	\
 		"echo Remove dongle, reset the module and press ESC; echo;"	\
 		"echo B$ env default -a; "			\
 		"echo B$ saveenv; "				\
@@ -301,8 +301,14 @@
 	"dl_part1=tftp $fn_part1\0"				\
 	"dl_part2=tftp $fn_part2\0"				\
 	"dl_part3=tftp $fn_part3\0"				\
-	"erase_all=sf probe; sf erase 0 +0x8000000\0"		\
-	"erase_all_64=sf probe; sf erase 0 +0x4000000\0"	\
+	"erase_all=echo ""; echo !!!!!!!!!!!!!!!!!!!!!!!!!!;"	\
+		"echo !  Erasing whole flash... !;"		\
+		"echo !!!!!!!!!!!!!!!!!!!!!!!!!!;"		\
+		"sf probe; sf erase 0 +0x8000000\0"		\
+	"erase_all_64=echo ""; echo !!!!!!!!!!!!!!!!!!!!!!!!!!;"\
+		"echo !  Erasing whole flash... !;"		\
+		"echo !!!!!!!!!!!!!!!!!!!!!!!!!!;"		\
+		"sf probe; sf erase 0 +0x4000000\0"		\
 	"console=ttyS0,115200n8\0"				\
 	"prog_dev=usb\0"						\
 	"USBB=echo $PROD:firmware/boot.bin;"			\
@@ -379,17 +385,22 @@
 #define SIZE_PART3    0x00800000
 
 #ifdef CONFIG_SPI_FLASH_128M
-	#define SIZE_PART1    0x06580000
+	#define SIZE_PART1    0x05580000
+	#define ADDRESS_PART4 0x06780000
+	#define SIZE_PART4    0x01000000
 	#define ADDRESS_PART2 0x07780000
 	#define ADDRESS_PART3 0x07800000
 #else
-	#define SIZE_PART1    0x02580000
+	#define SIZE_PART1    0x01D80000
+	#define ADDRESS_PART4 0x02F80000
+	#define SIZE_PART4    0x00800000
 	#define ADDRESS_PART2 0x03780000
 	#define ADDRESS_PART3 0x03800000
 #endif
 
 #define ADDRESS_PART0 0x00A00000
 #define SIZE_PART0    0x00800000
+
 #define MAX_PARTS_NUM 6
 
 #undef CONFIG_EXTRA_ENV_SETTINGS
@@ -411,6 +422,8 @@
 	"part2size=" __stringify(SIZE_PART2) "\0"		\
 	"part3base=" __stringify(ADDRESS_PART3) "\0"		\
 	"part3size=" __stringify(SIZE_PART3) "\0"		\
+	"part4base=" __stringify(ADDRESS_PART4) "\0"		\
+	"part4size=" __stringify(SIZE_PART4) "\0"		\
 	"partBbase=" __stringify(ADDRESS_PARTB) "\0"		\
 	"partBsize=" __stringify(SIZE_PARTB) "\0"		\
 	"partEbase=" __stringify(ADDRESS_PARTE) "\0"		\

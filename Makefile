@@ -1056,7 +1056,11 @@ endif
 	@echo >&2 "===================================================="
 	@echo >&2 "      Make RCW + PFE single u-boot-rcw-pfe.bin"
 	@echo >&2 "    and RCW + PFE + U-BOOT single u-boot-big.bin"
+ifeq ($(CONFIG_SUBTARGET_SOM120),y)
+	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/som120_rcw_600.bin.swapped rcw_ff.bin
+else
 	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/rcw_600.bin.swapped rcw_ff.bin
+endif
 	@cat rcw_ff.bin board/Arcturus/ucls1012a/bin/pfe_fw_sbl.itb > u-boot-rcw-pfe.bin
 	@objcopy -F binary --pad-to=0x100000 --gap-fill=0xff u-boot-rcw-pfe.bin rcw-pfe_ff.bin
 	@cat rcw-pfe_ff.bin u-boot.bin > u-boot-big.bin

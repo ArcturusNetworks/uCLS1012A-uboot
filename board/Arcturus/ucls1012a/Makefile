@@ -1,5 +1,5 @@
 #
-# Copyright 2019-2020 Arcturus Networks, Inc.
+# Copyright 2019-2022 Arcturus Networks, Inc.
 #
 # SPDX-License-Identifier:      GPL-2.0+
 #

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018-2020 Arcturus Networks, Inc.
+ * Copyright 2018-2022 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/ucls1012a/
  */
 
@@ -31,6 +31,8 @@ extern int hx3_hub_init(void);
 extern void read_board_rev(void);
 extern char module_rev[4];
 
+#ifndef CONFIG_SUBTARGET_SOM120
+
 #define MASK_CX_RST	0x10000000
 
 static void reset_cx(void)
@@ -48,6 +50,25 @@ static void reset_cx(void)
 	/* Pull CX part Reset DOWN */
 	mdelay(50);
 }
+#endif
+
+#ifdef CONFIG_SUBTARGET_SOM120
+static void reset_gpioex(void)
+{
+#define MASK_GPIOEX_RST	0x00000002
+
+	struct ccsr_gpio *pgpio = (void *)(GPIO1_BASE_ADDR);
+
+	/* Set direction output for GPIO1_30 */
+	setbits_be32(&pgpio->gpdir, MASK_GPIOEX_RST);
+
+	setbits_be32(&pgpio->gpdat, MASK_GPIOEX_RST);
+	mdelay(50);
+
+	clrbits_be32(&pgpio->gpdat, MASK_GPIOEX_RST);
+	mdelay(50);
+}
+#endif
 
 #define MASK_CPU_RST	0x00000003
 void reset_misc(void)
@@ -80,6 +101,8 @@ int checkboard(void)
 {
 #ifdef CONFIG_SUBTARGET_DONGLE
 	printf("Board: uCLS1012A-SOM PD\n\r");
+#elif CONFIG_SUBTARGET_SOM120
+	printf("Board: uCLS1012A-SOM120 Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #else
 	printf("Board: uCLS1012A-SOM Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #endif
@@ -162,9 +185,14 @@ int board_early_init_f(void)
 int last_stage_init(void)
 {
 	u8 id8;
+#ifndef CONFIG_SUBTARGET_SOM120
 	u32 id32;
 
 	reset_cx();
+#endif
+#ifdef CONFIG_SUBTARGET_SOM120
+	reset_gpioex();
+#endif
 
 	/* Initialize i2c */
 	i2c_set_bus_num(0);
@@ -181,10 +209,13 @@ int last_stage_init(void)
 		printf("Error reading i2c NCT72 information!\n");
 	else
 		printf("NCT72(0x%x): ready\n", id8);
+
+#ifndef CONFIG_SUBTARGET_SOM120
 	if (i2c_read(SYS_I2C_CX_ADDR, 0x1000, 1, (u8 *)&id32, 1) < 0)
 		printf("Error reading i2c CX2070x information!\n");
 	else
 		printf("CX2070x(0x%x): ready\n", id32);
+#endif
 
 #ifdef CONFIG_HX3_HUB_INIT
 	/* USB hub configuration - needed if defaults are different */
