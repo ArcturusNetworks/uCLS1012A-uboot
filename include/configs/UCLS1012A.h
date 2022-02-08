@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright 2019-2020 Arcturus Networks Inc.
+ * Copyright 2019-2022 Arcturus Networks Inc.
  *           http://www.arcturusnetworks.com/products/ucls1012a/
  */
 
@@ -446,6 +446,9 @@
 		"pfe stop; "					\
 		"run kargs; "					\
 		"bootm $kernel_load\0"				\
+	"iprogram=tftp part0-000000.itb; sf probe 0:0; "	\
+		"sf erase $part0base +$filesize; "		\
+		"sf write $loadaddr $part0base $filesize\0"	\
 	"program0=sf probe 0:0; "				\
 		"sf erase $part0base +$part0size; "		\
 		"sf write $loadaddr $part0base $filesize\0"	\
