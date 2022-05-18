@@ -52,7 +52,7 @@ static void reset_cx(void)
 }
 #endif
 
-#ifdef CONFIG_SUBTARGET_SOM120
+#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
 static void reset_gpioex(void)
 {
 #define MASK_GPIOEX_RST	0x00000002
@@ -84,10 +84,15 @@ void reset_misc(void)
 	mdelay(500);
 }
 
+static inline unsigned int get_rcw_gpinfo(void)
+{
+	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
+	unsigned int rcw = gur_in32(&gur->rcwsr[9]);
+	return rcw;
+}
+
 static inline unsigned char get_board_rev(int m)
 {
-	read_board_rev();
-
 	if (module_rev[0] == 'R') {
 		if (m == 1)
 			return module_rev[1];
@@ -99,10 +104,19 @@ static inline unsigned char get_board_rev(int m)
 
 int checkboard(void)
 {
+	unsigned int rcw = get_rcw_gpinfo();
+
+	module_rev[3] = (rcw >> 24) & 0xFF;
+	module_rev[2] = (rcw >> 16) & 0xFF;
+	module_rev[1] = (rcw >> 8)  & 0xFF;
+	module_rev[0] = (rcw >> 0)  & 0xFF;
+
 #ifdef CONFIG_SUBTARGET_DONGLE
 	printf("Board: uCLS1012A-SOM PD\n\r");
 #elif CONFIG_SUBTARGET_SOM120
 	printf("Board: uCLS1012A-SOM120 Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
+#elif CONFIG_SUBTARGET_SOM2X60
+	printf("Board: uCLS1012A-SOM2X60 Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #else
 	printf("Board: uCLS1012A-SOM Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #endif
@@ -125,22 +139,10 @@ int esdhc_status_fixup(void *blob, const char *compat)
 #ifdef CONFIG_TFABOOT
 int dram_init(void)
 {
-#ifdef CONFIG_TARGET_LS1012AFRWY
-	int board_rev;
-#endif
 	gd->ram_size = tfa_get_dram_size();
 
 	if (!gd->ram_size) {
-#ifdef CONFIG_TARGET_LS1012AFRWY
-		board_rev = get_board_version();
-
-		if (board_rev & BOARD_REV_C)
-			gd->ram_size = SYS_SDRAM_SIZE_1024;
-		else
-			gd->ram_size = SYS_SDRAM_SIZE_512;
-#else
 		gd->ram_size = CONFIG_SYS_SDRAM_SIZE;
-#endif
 	}
 	return 0;
 }
@@ -162,7 +164,25 @@ int dram_init(void)
 		0x0000022a,	/* mpodtctrl */
 		0xa1390003,	/* mpzqhwctrl */
 	};
-	gd->ram_size = SYS_SDRAM_SIZE_1024;
+#if 0
+	unsigned int rcw = get_rcw_gpinfo();
+
+	if (((rcw >> 8) & 0xFF) == '2') {
+		mparam.mdctl = 0x04180000;
+		gd->ram_size = SYS_SDRAM_SIZE_512;
+	} else {
+		mparam.mdctl = 0x05180000;
+		gd->ram_size = SYS_SDRAM_SIZE_1024;	
+	}
+#else
+#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
+		mparam.mdctl = 0x04180000;
+		gd->ram_size = SYS_SDRAM_SIZE_512;
+#else
+		mparam.mdctl = 0x05180000;
+		gd->ram_size = SYS_SDRAM_SIZE_1024;	
+#endif
+#endif
 
 	mmdc_init(&mparam);
 
@@ -190,7 +210,7 @@ int last_stage_init(void)
 
 	reset_cx();
 #endif
-#ifdef CONFIG_SUBTARGET_SOM120
+#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
 	reset_gpioex();
 #endif
 

@@ -141,7 +141,6 @@
 	"rcwbase=" __stringify(ADDRESS_RCW) "\0"		\
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
-	"kargs_rootdev=root=/dev/mtdblock2\0"			\
 	"kargs_misc=rootfstype=cramfs,squashfs,jffs2\0"		\
 	"kargs_misc2=quiet lpj=250000\0"			\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
@@ -181,8 +180,10 @@
 #define CONFIG_BOOTCOMMAND	"pfe stop; sf probe 0:0; "\
 				"if test $pactive = 0; then "	\
 					"sf read $kernel_load $part0base $image0size; " \
+					"setenv kargs_rootdev root=/dev/mtdblock0; "	\
 				"else "				\
 					"sf read $kernel_load $part1base $image1size; " \
+					"setenv kargs_rootdev root=/dev/mtdblock1; "	\
 				"fi; "				\
 				"run kargs; "\
 				"bootm $kernel_load\0 "

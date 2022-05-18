@@ -137,11 +137,13 @@
 	"partEbase=" __stringify(ADDRESS_PARTE) "\0"		\
 	"partEsize=" __stringify(SIZE_PARTE) "\0"		\
 	"image0size=" __stringify(SIZE_PART0) "\0"		\
-	"image1size=" __stringify(SIZE_PART1) "\0"		\
 	"rcwbase=" __stringify(ADDRESS_RCW) "\0"		\
+	"rcwsize=" __stringify(SIZE_RCW) "\0"			\
+	"pfebase=" __stringify(ADDRESS_PFE) "\0"		\
+	"pfesize=" __stringify(SIZE_PFE) "\0"			\
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
-	"kargs_rootdev=root=/dev/mtdblock2\0"			\
+	"kargs_rootdev=root=/dev/mtdblock$mactive\0"		\
 	"kargs_misc=rootfstype=cramfs,squashfs,jffs2\0"		\
 	"kargs_misc2=quiet lpj=250000\0"			\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
@@ -155,14 +157,10 @@
 		"bootm $kernel_load\0"				\
 	"program0=sf probe 0:0;"				\
 		"sf erase $part0base +$part0size; "		\
-		"sf write $loadaddr $part0base $filesize; "	\
-		"setenv image0size $filesize; "			\
-		"saveenv\0"					\
+		"sf write $loadaddr $part0base $filesize\0"	\
 	"program1=sf probe 0:0;"				\
 		"sf erase $part1base +$part1size; "		\
-		"sf write $loadaddr $part1base $filesize; "	\
-		"setenv image1size $filesize; "			\
-		"saveenv\0"					\
+		"sf write $loadaddr $part1base $filesize\0"	\
 	"program2=sf probe 0:0; "				\
 		"sf erase $part2base +$part2size; "		\
 		"sf write $loadaddr $part2base $filesize\0 "	\
@@ -179,11 +177,7 @@
 
 #undef CONFIG_BOOTCOMMAND
 #define CONFIG_BOOTCOMMAND	"pfe stop; sf probe 0:0; "\
-				"if test $pactive = 0; then "	\
-					"sf read $kernel_load $part0base $image0size; " \
-				"else "				\
-					"sf read $kernel_load $part1base $image1size; " \
-				"fi; "				\
+				"sf read $kernel_load part${pactive}base part${pactive}size; " \
 				"run kargs; "\
 				"bootm $kernel_load\0 "
 

@@ -2,7 +2,7 @@
 /*
  * Command for accessing Arcturus factory environment.
  *
- * Copyright 2013-2019 Arcturus Networks Inc.
+ * Copyright 2013-2022 Arcturus Networks Inc.
  *           https://www.arcturusnetworks.com/products/
  *           by Oleksandr G Zhadan et al.
  *

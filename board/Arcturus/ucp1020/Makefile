@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0+
 #
-# Copyright 2013-2015 Arcturus Networks, Inc.
+# Copyright 2013-2022 Arcturus Networks, Inc.
 # based on board/freescale/p1_p2_rdb_pc/Makefile
 # original copyright follows:
 # Copyright 2010-2011 Freescale Semiconductor, Inc.

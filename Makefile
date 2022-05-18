@@ -2,7 +2,7 @@
 
 VERSION = 2019
 PATCHLEVEL = 10
-SUBLEVEL =
+SUBLEVEL = 2220
 EXTRAVERSION =
 NAME =
 
@@ -1059,7 +1059,15 @@ endif
 ifeq ($(CONFIG_SUBTARGET_SOM120),y)
 	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/som120_rcw_600.bin.swapped rcw_ff.bin
 else
-	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/rcw_600.bin.swapped rcw_ff.bin
+ ifeq ($(CONFIG_SUBTARGET_DONGLE),y)
+	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/dongle_rcw_600.bin.swapped rcw_ff.bin
+ else
+     ifeq ($(CONFIG_SUBTARGET_SOM2X60),y)
+	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/som2x60_rcw_600.bin.swapped rcw_ff.bin
+    else
+	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/som314_rcw_600.bin.swapped rcw_ff.bin
+    endif
+ endif
 endif
 	@cat rcw_ff.bin board/Arcturus/ucls1012a/bin/pfe_fw_sbl.itb > u-boot-rcw-pfe.bin
 	@objcopy -F binary --pad-to=0x100000 --gap-fill=0xff u-boot-rcw-pfe.bin rcw-pfe_ff.bin

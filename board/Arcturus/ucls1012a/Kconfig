@@ -24,6 +24,9 @@ config SUBTARGET_SOM
 config SUBTARGET_SOM120
 	bool "Base UCLS1012A-SOM120 image"
 
+config SUBTARGET_SOM2X60
+	bool "Base UCLS1012A-SOM2x60 image"
+
 config SUBTARGET_DONGLE
 	bool "UCLS1012A-SOM image for Programming Dongle"
 
@@ -76,6 +79,7 @@ config SYS_LS_PFE_ESBC_LENGTH
 config BOARD_SPECIFIC_OPTIONS # dummy
 	def_bool y
 	select PHYLIB
+	imply PHY_REALTEK
 	imply PHY_ATHEROS
 
 config DDR_PFE_PHYS_BASEADDR

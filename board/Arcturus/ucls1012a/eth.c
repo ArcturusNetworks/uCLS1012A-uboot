@@ -28,11 +28,14 @@
 
 static inline void ucls1012a_reset_phy(void)
 {
-#ifdef CONFIG_SUBTARGET_SOM120
+#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
 	unsigned int val, mask;
 	struct ccsr_gpio *pgpio = (void *)(GPIO1_BASE_ADDR);
 
-	mask = (MASK_ETH_PHYA_RST | MASK_ETH_PHYB_RST);
+	mask = MASK_ETH_PHYA_RST;
+#if defined(CONFIG_SUBTARGET_SOM120)
+	mask |= MASK_ETH_PHYB_RST;
+#endif
 	setbits_be32(&pgpio->gpdir, mask);
 
 	val = in_be32(&pgpio->gpdat);

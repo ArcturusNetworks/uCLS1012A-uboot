@@ -10,6 +10,7 @@
 #include <common.h>
 #include <fsl_mmdc.h>
 #include <asm/io.h>
+#include <linux/delay.h>
 
 static void set_wait_for_bits_clear(void *ptr, u32 value, u32 bits)
 {
@@ -28,7 +29,6 @@ static void set_wait_for_bits_clear(void *ptr, u32 value, u32 bits)
 void mmdc_init(const struct fsl_mmdc_info *priv)
 {
 	struct mmdc_regs *mmdc = (struct mmdc_regs *)CONFIG_SYS_FSL_DDR_ADDR;
-	unsigned int tmp;
 
 	/* 1. set configuration request */
 	out_be32(&mmdc->mdscr, MDSCR_ENABLE_CON_REQ);
@@ -50,8 +50,7 @@ void mmdc_init(const struct fsl_mmdc_info *priv)
 
 	/* 5. configure DDR physical parameters */
 	/* set row/column address width, burst length, data bus width */
-	tmp = priv->mdctl & ~(MDCTL_SDE0 | MDCTL_SDE1);
-	out_be32(&mmdc->mdctl, tmp);
+	out_be32(&mmdc->mdctl, (priv->mdctl & ~(MDCTL_SDE0 | MDCTL_SDE1)));
 	/* configure address space partition */
 	out_be32(&mmdc->mdasp, priv->mdasp);
 
@@ -59,65 +58,59 @@ void mmdc_init(const struct fsl_mmdc_info *priv)
 
 	/* 7. enable MMDC with the desired chip select */
 #if (CONFIG_CHIP_SELECTS_PER_CTRL == 1)
-		out_be32(&mmdc->mdctl, tmp | MDCTL_SDE0);
+		out_be32(&mmdc->mdctl, (priv->mdctl | MDCTL_SDE0));
 #elif (CONFIG_CHIP_SELECTS_PER_CTRL == 2)
-		out_be32(&mmdc->mdctl, tmp | MDCTL_SDE0 | MDCTL_SDE1);
+		out_be32(&mmdc->mdctl, (priv->mdctl | MDCTL_SDE0 | MDCTL_SDE1));
 #else
 #error "Unsupported DDRC_NUM_CS"
 #endif
 
 	/* 8a. dram init sequence: update MRs for ZQ, ODT, PRE, etc */
-	out_be32(&mmdc->mdscr, CMD_ADDR_LSB_MR_ADDR(8) |
-				MDSCR_ENABLE_CON_REQ |
-				CMD_LOAD_MODE_REG |
-				CMD_BANK_ADDR_2);
+	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(8) | MDSCR_ENABLE_CON_REQ |
+				CMD_LOAD_MODE_REG | CMD_BANK_ADDR_2);
 
-	out_be32(&mmdc->mdscr, CMD_ADDR_LSB_MR_ADDR(0) |
-				MDSCR_ENABLE_CON_REQ |
-				CMD_LOAD_MODE_REG |
-				CMD_BANK_ADDR_3);
+	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(0) | MDSCR_ENABLE_CON_REQ |
+				CMD_LOAD_MODE_REG | CMD_BANK_ADDR_3);
 
-	out_be32(&mmdc->mdscr, CMD_ADDR_LSB_MR_ADDR(4) |
-				MDSCR_ENABLE_CON_REQ |
-				CMD_LOAD_MODE_REG |
-				CMD_BANK_ADDR_1);
+	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(4) | MDSCR_ENABLE_CON_REQ |
+				CMD_LOAD_MODE_REG | CMD_BANK_ADDR_1);
 
-	out_be32(&mmdc->mdscr, CMD_ADDR_MSB_MR_OP(0x19) |
+	out_be32(&mmdc->mdscr,  CMD_ADDR_MSB_MR_OP(0x19) |
 				CMD_ADDR_LSB_MR_ADDR(0x30) |
 				MDSCR_ENABLE_CON_REQ |
 				CMD_LOAD_MODE_REG | CMD_BANK_ADDR_0);
 
 	/* 8b. ZQ calibration */
-	out_be32(&mmdc->mdscr, CMD_ADDR_MSB_MR_OP(0x4) |
-				MDSCR_ENABLE_CON_REQ |
+	out_be32(&mmdc->mdscr,  CMD_ADDR_MSB_MR_OP(0x4) | MDSCR_ENABLE_CON_REQ |
 				CMD_ZQ_CALIBRATION | CMD_BANK_ADDR_0);
 
 	set_wait_for_bits_clear(&mmdc->mpzqhwctrl, priv->mpzqhwctrl,
 				MPZQHWCTRL_ZQ_HW_FORCE);
 
 	/* 9a. calibrations now, wr lvl */
-	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(0x84) | MDSCR_WL_EN |
+	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(0x84) |
 				MDSCR_ENABLE_CON_REQ |
 				CMD_LOAD_MODE_REG | CMD_BANK_ADDR_1);
+
+	out_be32(&mmdc->mdscr,  MDSCR_ENABLE_CON_REQ | MDSCR_WL_EN |
+				CMD_NORMAL);
 
 	set_wait_for_bits_clear(&mmdc->mpwlgcr, MPWLGCR_HW_WL_EN,
 				MPWLGCR_HW_WL_EN);
 
 	mdelay(1);
 
-	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(4) |
-				MDSCR_ENABLE_CON_REQ |
+	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(4) | MDSCR_ENABLE_CON_REQ |
 				CMD_LOAD_MODE_REG | CMD_BANK_ADDR_1);
-
 	out_be32(&mmdc->mdscr, MDSCR_ENABLE_CON_REQ);
 
 	mdelay(1);
 
 	/* 9b. read DQS gating calibration */
-	out_be32(&mmdc->mdscr, CMD_ADDR_MSB_MR_OP(4) | MDSCR_ENABLE_CON_REQ |
+	out_be32(&mmdc->mdscr,  CMD_ADDR_MSB_MR_OP(4) | MDSCR_ENABLE_CON_REQ |
 				CMD_PRECHARGE_BANK_OPEN | CMD_BANK_ADDR_0);
 
-	out_be32(&mmdc->mdscr, CMD_ADDR_LSB_MR_ADDR(4) | MDSCR_ENABLE_CON_REQ |
+	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(4) | MDSCR_ENABLE_CON_REQ |
 				CMD_LOAD_MODE_REG | CMD_BANK_ADDR_3);
 
 	out_be32(&mmdc->mppdcmpr2, MPPDCMPR2_MPR_COMPARE_EN);
@@ -136,16 +129,16 @@ void mmdc_init(const struct fsl_mmdc_info *priv)
 				CMD_BANK_ADDR_3);
 
 	/* 9c. read calibration */
-	out_be32(&mmdc->mdscr, CMD_ADDR_MSB_MR_OP(4) | MDSCR_ENABLE_CON_REQ |
+	out_be32(&mmdc->mdscr,  CMD_ADDR_MSB_MR_OP(4) | MDSCR_ENABLE_CON_REQ |
 				CMD_PRECHARGE_BANK_OPEN | CMD_BANK_ADDR_0);
-	out_be32(&mmdc->mdscr, CMD_ADDR_LSB_MR_ADDR(4) | MDSCR_ENABLE_CON_REQ |
+	out_be32(&mmdc->mdscr,  CMD_ADDR_LSB_MR_ADDR(4) | MDSCR_ENABLE_CON_REQ |
 				CMD_LOAD_MODE_REG | CMD_BANK_ADDR_3);
 	out_be32(&mmdc->mppdcmpr2,  MPPDCMPR2_MPR_COMPARE_EN);
 	set_wait_for_bits_clear(&mmdc->mprddlhwctl,
 				MPRDDLHWCTL_AUTO_RD_CALIBRATION_EN,
 				MPRDDLHWCTL_AUTO_RD_CALIBRATION_EN);
 
-	out_be32(&mmdc->mdscr, MDSCR_ENABLE_CON_REQ | CMD_LOAD_MODE_REG |
+	out_be32(&mmdc->mdscr,  MDSCR_ENABLE_CON_REQ | CMD_LOAD_MODE_REG |
 				CMD_BANK_ADDR_3);
 
 	/* 10. configure power-down, self-refresh entry, exit parameters */
