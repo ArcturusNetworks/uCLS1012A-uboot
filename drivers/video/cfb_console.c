@@ -65,12 +65,16 @@
  */
 
 #include <common.h>
+#include <command.h>
+#include <cpu_func.h>
 #include <env.h>
 #include <fdtdec.h>
 #include <gzip.h>
+#include <log.h>
 #include <version.h>
 #include <malloc.h>
 #include <video.h>
+#include <asm/global_data.h>
 #include <linux/compiler.h>
 
 #if defined(CONFIG_VIDEO_MXS)
@@ -1178,7 +1182,7 @@ static int display_rle8_bitmap(struct bmp_image *img, int xoff, int yoff,
 	y = __le32_to_cpu(img->header.height) - 1;
 	ncolors = __le32_to_cpu(img->header.colors_used);
 	bpp = VIDEO_PIXEL_SIZE;
-	fbp = (unsigned char *) ((unsigned int) video_fb_address +
+	fbp = (unsigned char *) ((unsigned long) video_fb_address +
 				 (y + yoff) * VIDEO_LINE_LEN +
 				 xoff * bpp);
 
@@ -1233,7 +1237,7 @@ static int display_rle8_bitmap(struct bmp_image *img, int xoff, int yoff,
 				x = 0;
 				y--;
 				fbp = (unsigned char *)
-					((unsigned int) video_fb_address +
+					((unsigned long) video_fb_address +
 					 (y + yoff) * VIDEO_LINE_LEN +
 					 xoff * bpp);
 				continue;
@@ -1246,7 +1250,7 @@ static int display_rle8_bitmap(struct bmp_image *img, int xoff, int yoff,
 				x += bm[2];
 				y -= bm[3];
 				fbp = (unsigned char *)
-					((unsigned int) video_fb_address +
+					((unsigned long) video_fb_address +
 					 (y + yoff) * VIDEO_LINE_LEN +
 					 xoff * bpp);
 				bm += 4;
@@ -1709,7 +1713,8 @@ static void logo_black(void)
 			1);
 }
 
-static int do_clrlogo(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+static int do_clrlogo(struct cmd_tbl *cmdtp, int flag, int argc,
+		      char *const argv[])
 {
 	if (argc != 1)
 		return cmd_usage(cmdtp);
@@ -1978,9 +1983,7 @@ static void *video_logo(void)
 
 static int cfb_fb_is_in_dram(void)
 {
-	bd_t *bd = gd->bd;
-#if defined(CONFIG_ARM) || defined(CONFIG_NDS32) || \
-defined(CONFIG_SANDBOX) || defined(CONFIG_X86)
+	struct bd_info *bd = gd->bd;
 	ulong start, end;
 	int i;
 
@@ -1991,11 +1994,7 @@ defined(CONFIG_SANDBOX) || defined(CONFIG_X86)
 		    (ulong)video_fb_address < end)
 			return 1;
 	}
-#else
-	if ((ulong)video_fb_address >= bd->bi_memstart &&
-	    (ulong)video_fb_address < bd->bi_memstart + bd->bi_memsize)
-		return 1;
-#endif
+
 	return 0;
 }
 
@@ -2025,7 +2024,7 @@ static int cfg_video_init(void)
 	if (pGD == NULL)
 		return -1;
 
-	video_fb_address = (void *) VIDEO_FB_ADRS;
+	video_fb_address = (void *)(unsigned long) VIDEO_FB_ADRS;
 
 	cfb_do_flush_cache = cfb_fb_is_in_dram() && dcache_status();
 

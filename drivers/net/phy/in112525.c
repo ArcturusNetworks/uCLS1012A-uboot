@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 NXP
+ * Copyright 2018-2021 NXP
  * Copyright 2018 INPHI
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,8 @@
 #include <linux/string.h>
 #include <linux/stringify.h>
 #include <linux/err.h>
+#include <linux/delay.h>
+#include <dm/device_compat.h>
 #include <phy.h>
 #include <fsl-mc/ldpaa_wriop.h>
 #include <in112525.h>
@@ -753,9 +755,8 @@ int in112525_s03_lane_recovery(int lane)
 		}
 		break;
 	default:
-		dev_err(&inphi_phydev->mdio.dev,
-			"Incorrect usage of APIs in %s driver\n",
-			inphi_phydev->drv->name);
+		pr_err("Incorrect usage of APIs in %s driver\n",
+		       inphi_phydev->drv->name);
 		break;
 	}
 

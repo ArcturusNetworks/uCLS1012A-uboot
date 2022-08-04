@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright 2018-2020 NXP
+ * Copyright 2018-2021 NXP
  */
 
 #ifndef __LX2_COMMON_H
@@ -20,7 +20,6 @@
 #define CONFIG_SYS_FLASH_BASE		0x20000000
 
 #define CONFIG_SKIP_LOWLEVEL_INIT
-#define CONFIG_BOARD_EARLY_INIT_F	1
 
 /* DDR */
 #define CONFIG_FSL_DDR_INTERACTIVE	/* Interactive debugging */
@@ -53,7 +52,7 @@
 #define CONFIG_SYS_LOAD_ADDR	(CONFIG_SYS_DDR_SDRAM_BASE + 0x10000000)
 
 /* SMP Definitinos  */
-#define CPU_RELEASE_ADDR		secondary_boot_func
+#define CPU_RELEASE_ADDR		secondary_boot_addr
 
 /* Generic Timer Definitions */
 /*
@@ -78,7 +77,6 @@
 					(void *)CONFIG_SYS_SERIAL1, \
 					(void *)CONFIG_SYS_SERIAL2, \
 					(void *)CONFIG_SYS_SERIAL3 }
-#define CONFIG_BAUDRATE			115200
 #define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
 
 /* MC firmware */
@@ -162,13 +160,16 @@
 /* USB */
 #ifdef CONFIG_USB
 #define CONFIG_HAS_FSL_XHCI_USB
+#ifndef CONFIG_TARGET_LX2162AQDS
 #define CONFIG_USB_MAX_CONTROLLER_COUNT	2
 #endif
+#endif
 
-/* FlexSPI */
-#ifdef CONFIG_NXP_FSPI
-#define NXP_FSPI_FLASH_SIZE		SZ_64M
-#define NXP_FSPI_FLASH_NUM		1
+/* GPIO */
+#ifdef CONFIG_DM_GPIO
+#ifndef CONFIG_MPC8XXX_GPIO
+#define CONFIG_MPC8XXX_GPIO
+#endif
 #endif
 
 #ifndef __ASSEMBLY__
@@ -184,16 +185,6 @@ int select_i2c_ch_pca9547_sec(unsigned char ch);
 
 #define CONFIG_HWCONFIG
 #define HWCONFIG_BUFFER_SIZE		128
-
-#define CONFIG_SYS_MMC_ENV_DEV          0
-#define CONFIG_ENV_SIZE			0x2000          /* 8KB */
-#define CONFIG_ENV_SECT_SIZE		0x20000
-#define CONFIG_ENV_OFFSET		0x500000
-#define CONFIG_ENV_ADDR			(CONFIG_SYS_FLASH_BASE + \
-					 CONFIG_ENV_OFFSET)
-
-/* Allow to overwrite serial and ethaddr */
-#define CONFIG_ENV_OVERWRITE
 
 /* Monitor Command Prompt */
 #define CONFIG_SYS_CBSIZE		512	/* Console I/O Buffer Size */
@@ -241,7 +232,6 @@ int select_i2c_ch_pca9547_sec(unsigned char ch);
 	"ramdisk_size=0x2000000\0"		\
 	"fdt_high=0xa0000000\0"			\
 	"initrd_high=0xffffffffffffffff\0"	\
-	"fdt_addr=0x64f00000\0"			\
 	"kernel_start=0x1000000\0"		\
 	"kernelheader_start=0x600000\0"		\
 	"scriptaddr=0x80000000\0"		\
@@ -251,11 +241,12 @@ int select_i2c_ch_pca9547_sec(unsigned char ch);
 	"kernel_addr_r=0x81000000\0"		\
 	"kernelheader_size=0x40000\0"		\
 	"fdt_addr_r=0x90000000\0"		\
+	"fdt_addr=0x90000000\0"                 \
 	"load_addr=0xa0000000\0"		\
 	"kernel_size=0x2800000\0"		\
 	"kernel_addr_sd=0x8000\0"		\
 	"kernelhdr_addr_sd=0x3000\0"            \
-	"kernel_size_sd=0x1d000\0"              \
+	"kernel_size_sd=0x14000\0"              \
 	"kernelhdr_size_sd=0x20\0"              \
 	"console=ttyAMA0,38400n8\0"		\
 	BOOTENV					\
@@ -308,7 +299,7 @@ int select_i2c_ch_pca9547_sec(unsigned char ch);
 		" && mmc read 0x806C0000 0x3600 0x20 "		\
 		"&& esbc_validate 0x806C0000;env exists mcinitcmd "	\
 		"&& fsl_mc lazyapply dpl 0x80d00000;"		\
-		"run distro_bootcmd;run emmc_bootcmd;"		\
+		"run distro_bootcmd;run sd2_bootcmd;"		\
 		"env exists secureboot && esbc_halt;"
 
 #define BOOT_TARGET_DEVICES(func) \

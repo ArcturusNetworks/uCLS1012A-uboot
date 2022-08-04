@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2019 NXP
+ * Copyright 2019-2021 NXP Semiconductors
  */
 
+#include <asm/eth.h>
 #include <net/dsa.h>
+#include <net.h>
 
 #define DSA_SANDBOX_MAGIC	0x00415344
 #define DSA_SANDBOX_TAG_LEN	sizeof(struct dsa_sandbox_tag)
-/*
- * This global flag is used to enable DSA just for DSA test so it doesn't affect
- * the existing eth unit test.
- */
-int dsa_sandbox_port_mask;
 
 struct dsa_sandbox_priv {
-	int enabled;
-	int port_enabled;
+	struct eth_sandbox_priv *master_priv;
+	int port_en_mask;
 };
 
 struct dsa_sandbox_tag {
@@ -23,15 +20,29 @@ struct dsa_sandbox_tag {
 	u32 port;
 };
 
+static bool sb_dsa_port_enabled(struct udevice *dev, int port)
+{
+	struct dsa_sandbox_priv *priv = dev_get_priv(dev);
+
+	return priv->port_en_mask & BIT(port);
+}
+
+static bool sb_dsa_master_enabled(struct udevice *dev)
+{
+	struct dsa_sandbox_priv *priv = dev_get_priv(dev);
+
+	return !priv->master_priv->disabled;
+}
+
 static int dsa_sandbox_port_enable(struct udevice *dev, int port,
 				   struct phy_device *phy)
 {
-	struct dsa_sandbox_priv *priv = dev->priv;
+	struct dsa_sandbox_priv *priv = dev_get_priv(dev);
 
-	if (!priv->enabled)
+	if (!sb_dsa_master_enabled(dev))
 		return -EFAULT;
 
-	priv->port_enabled |= BIT(port);
+	priv->port_en_mask |= BIT(port);
 
 	return 0;
 }
@@ -39,24 +50,20 @@ static int dsa_sandbox_port_enable(struct udevice *dev, int port,
 static void dsa_sandbox_port_disable(struct udevice *dev, int port,
 				     struct phy_device *phy)
 {
-	struct dsa_sandbox_priv *priv = dev->priv;
+	struct dsa_sandbox_priv *priv = dev_get_priv(dev);
 
-	if (!priv->enabled)
-		return;
-
-	priv->port_enabled &= ~BIT(port);
+	priv->port_en_mask &= ~BIT(port);
 }
 
 static int dsa_sandbox_xmit(struct udevice *dev, int port, void *packet,
 			    int length)
 {
-	struct dsa_sandbox_priv *priv = dev->priv;
 	struct dsa_sandbox_tag *tag = packet;
 
-	if (!priv->enabled)
+	if (!sb_dsa_master_enabled(dev))
 		return -EFAULT;
 
-	if (!(priv->port_enabled & BIT(port)))
+	if (!sb_dsa_port_enabled(dev, port))
 		return -EFAULT;
 
 	tag->magic = DSA_SANDBOX_MAGIC;
@@ -68,17 +75,16 @@ static int dsa_sandbox_xmit(struct udevice *dev, int port, void *packet,
 static int dsa_sandbox_rcv(struct udevice *dev, int *port, void *packet,
 			   int length)
 {
-	struct dsa_sandbox_priv *priv = dev->priv;
 	struct dsa_sandbox_tag *tag = packet;
 
-	if (!priv->enabled)
+	if (!sb_dsa_master_enabled(dev))
 		return -EFAULT;
 
 	if (tag->magic != DSA_SANDBOX_MAGIC)
 		return -EFAULT;
 
 	*port = tag->port;
-	if (!(priv->port_enabled & BIT(*port)))
+	if (!sb_dsa_port_enabled(dev, tag->port))
 		return -EFAULT;
 
 	return 0;
@@ -91,13 +97,49 @@ static const struct dsa_ops dsa_sandbox_ops = {
 	.rcv = dsa_sandbox_rcv,
 };
 
-static int dsa_sandbox_bind(struct udevice *dev)
+static int sb_dsa_handler(struct udevice *dev, void *packet,
+			  unsigned int len)
 {
-	struct dsa_perdev_platdata *pdata = dev->platdata;
+	struct eth_sandbox_priv *master_priv;
+	struct dsa_sandbox_tag *tag = packet;
+	struct udevice *dsa_dev;
+	u32 port_index;
+	void *rx_buf;
+	int i;
 
-	/* must be at least 4 to match sandbox test DT */
-	pdata->num_ports = 4;
-	pdata->headroom = DSA_SANDBOX_TAG_LEN;
+	/* this emulates the switch hw and the network side */
+	if (tag->magic != DSA_SANDBOX_MAGIC)
+		return -EFAULT;
+
+	port_index = tag->port;
+	master_priv = dev_get_priv(dev);
+	dsa_dev = master_priv->priv;
+	if (!sb_dsa_port_enabled(dsa_dev, port_index))
+		return -EFAULT;
+
+	packet += DSA_SANDBOX_TAG_LEN;
+	len -= DSA_SANDBOX_TAG_LEN;
+
+	if (!sandbox_eth_arp_req_to_reply(dev, packet, len))
+		goto dsa_tagging;
+	if (!sandbox_eth_ping_req_to_reply(dev, packet, len))
+		goto dsa_tagging;
+
+	return 0;
+
+dsa_tagging:
+	master_priv->recv_packets--;
+	i = master_priv->recv_packets;
+	rx_buf = master_priv->recv_packet_buffer[i];
+	len = master_priv->recv_packet_length[i];
+	memmove(rx_buf + DSA_SANDBOX_TAG_LEN, rx_buf, len);
+
+	tag = rx_buf;
+	tag->magic = DSA_SANDBOX_MAGIC;
+	tag->port = port_index;
+	len += DSA_SANDBOX_TAG_LEN;
+	master_priv->recv_packet_length[i] = len;
+	master_priv->recv_packets++;
 
 	return 0;
 }
@@ -105,24 +147,19 @@ static int dsa_sandbox_bind(struct udevice *dev)
 static int dsa_sandbox_probe(struct udevice *dev)
 {
 	struct dsa_sandbox_priv *priv = dev_get_priv(dev);
+	struct udevice *master = dsa_get_master(dev);
+	struct eth_sandbox_priv *master_priv;
 
-	/*
-	 * return error if DSA is not being tested so we don't break existing
-	 * eth test.
-	 */
-	if (!dsa_sandbox_port_mask)
-		return -EINVAL;
+	if (!master)
+		return -ENODEV;
 
-	priv->enabled = 1;
+	dsa_set_tagging(dev, DSA_SANDBOX_TAG_LEN, 0);
 
-	return 0;
-}
+	master_priv = dev_get_priv(master);
+	master_priv->priv = dev;
+	master_priv->tx_handler = sb_dsa_handler;
 
-static int dsa_sandbox_remove(struct udevice *dev)
-{
-	struct dsa_sandbox_priv *priv = dev_get_priv(dev);
-
-	priv->enabled = 0;
+	priv->master_priv = master_priv;
 
 	return 0;
 }
@@ -136,137 +173,7 @@ U_BOOT_DRIVER(dsa_sandbox) = {
 	.name		= "dsa_sandbox",
 	.id		= UCLASS_DSA,
 	.of_match	= dsa_sandbox_ids,
-	.bind		= dsa_sandbox_bind,
 	.probe		= dsa_sandbox_probe,
-	.remove		= dsa_sandbox_remove,
 	.ops		= &dsa_sandbox_ops,
-	.priv_auto_alloc_size = sizeof(struct dsa_sandbox_priv),
-	.platdata_auto_alloc_size = sizeof(struct dsa_perdev_platdata),
-};
-
-struct dsa_sandbox_eth_priv {
-	int enabled;
-	int started;
-	int packet_length;
-	uchar packet[DSA_MAX_FRAME_SIZE];
-};
-
-static int dsa_eth_sandbox_start(struct udevice *dev)
-{
-	struct dsa_sandbox_eth_priv *priv = dev->priv;
-
-	if (!priv->enabled)
-		return -EFAULT;
-
-	priv->started = 1;
-
-	return 0;
-}
-
-static void dsa_eth_sandbox_stop(struct udevice *dev)
-{
-	struct dsa_sandbox_eth_priv *priv = dev->priv;
-
-	if (!priv->enabled)
-		return;
-
-	priv->started = 0;
-}
-
-static int dsa_eth_sandbox_send(struct udevice *dev, void *packet, int length)
-{
-	struct dsa_sandbox_eth_priv *priv = dev->priv;
-	struct dsa_sandbox_tag *tag = packet;
-
-	if (!priv->enabled || !priv->started)
-		return -EFAULT;
-
-	memcpy(priv->packet, packet, length);
-	priv->packet_length = length;
-
-	/*
-	 * for DSA test frames we only respond if the associated port is enabled
-	 * in the dsa test port mask
-	 */
-
-	if (tag->magic == DSA_SANDBOX_MAGIC) {
-		int port = tag->port;
-
-		if (!(dsa_sandbox_port_mask & BIT(port)))
-			/* drop the frame, port is not enabled */
-			priv->packet_length = 0;
-	}
-
-	return 0;
-}
-
-static int dsa_eth_sandbox_recv(struct udevice *dev, int flags, uchar **packetp)
-{
-	struct dsa_sandbox_eth_priv *priv = dev->priv;
-	int length = priv->packet_length;
-
-	if (!priv->enabled || !priv->started)
-		return -EFAULT;
-
-	if (!length) {
-		/* no frames pending, force a time-out */
-		timer_test_add_offset(100);
-		return -EAGAIN;
-	}
-
-	*packetp = priv->packet;
-	priv->packet_length = 0;
-
-	return length;
-}
-
-static const struct eth_ops dsa_eth_sandbox_ops = {
-	.start	= dsa_eth_sandbox_start,
-	.send	= dsa_eth_sandbox_send,
-	.recv	= dsa_eth_sandbox_recv,
-	.stop	= dsa_eth_sandbox_stop,
-};
-
-static int dsa_eth_sandbox_bind(struct udevice *dev)
-{
-	return 0;
-}
-
-static int dsa_eth_sandbox_probe(struct udevice *dev)
-{
-	struct dsa_sandbox_eth_priv *priv = dev->priv;
-
-	priv->enabled = 1;
-
-	/*
-	 * return error if DSA is not being tested do we don't break existing
-	 * eth test.
-	 */
-	return dsa_sandbox_port_mask ? 0 : -EINVAL;
-}
-
-static int dsa_eth_sandbox_remove(struct udevice *dev)
-{
-	struct dsa_sandbox_eth_priv *priv = dev->priv;
-
-	priv->enabled = 0;
-
-	return 0;
-}
-
-static const struct udevice_id dsa_eth_sandbox_ids[] = {
-	{ .compatible = "sandbox,dsa-eth" },
-	{ }
-};
-
-U_BOOT_DRIVER(dsa_eth_sandbox) = {
-	.name		= "dsa_eth_sandbox",
-	.id		= UCLASS_ETH,
-	.of_match	= dsa_eth_sandbox_ids,
-	.bind		= dsa_eth_sandbox_bind,
-	.probe		= dsa_eth_sandbox_probe,
-	.remove		= dsa_eth_sandbox_remove,
-	.ops		= &dsa_eth_sandbox_ops,
-	.platdata_auto_alloc_size = sizeof(struct eth_pdata),
-	.priv_auto_alloc_size = sizeof(struct dsa_sandbox_eth_priv),
+	.priv_auto	= sizeof(struct dsa_sandbox_priv),
 };

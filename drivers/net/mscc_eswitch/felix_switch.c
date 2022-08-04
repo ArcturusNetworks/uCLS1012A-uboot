@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
 /*
- * Felix Ethernet switch driver
- * Copyright 2018-2019 NXP
+ * Felix (VSC9959) Ethernet switch driver
+ * Copyright 2018-2021 NXP Semiconductors
  */
 
 /*
- * This driver is used for the Ethernet switch integrated into LS1028A NXP.
+ * This driver is used for the Ethernet switch integrated into NXP LS1028A.
  * Felix switch is derived from Microsemi Ocelot but there are several NXP
  * adaptations that makes the two U-Boot drivers largely incompatible.
  *
@@ -15,11 +15,12 @@
  * egress/ingress ports in the switch for Tx/Rx.
  */
 
-#include <common.h>
+#include <dm/device_compat.h>
+#include <linux/delay.h>
 #include <net/dsa.h>
 #include <asm/io.h>
-#include <pci.h>
 #include <miiphy.h>
+#include <pci.h>
 
 /* defines especially around PCS are reused from enetc */
 #include "../fsl_enetc.h"
@@ -93,7 +94,6 @@
  * value in place of a VLAN tag followed by the extraction/injection header and
  * the original L2 frame.  Out of all this we only use the port ID.
  */
-
 #define FELIX_DSA_TAG_LEN		sizeof(struct felix_dsa_tag)
 #define FELIX_DSA_TAG_MAGIC		0x0a008088
 #define FELIX_DSA_TAG_INJ_PORT		7
@@ -112,7 +112,6 @@ struct felix_priv {
 	void *regs_base;
 	void *imdio_base;
 	struct mii_dev imdio;
-	struct udevice *port[FELIX_PORT_COUNT];
 };
 
 /* MDIO wrappers, we're using these to drive internal MDIO to get to serdes */
@@ -134,21 +133,13 @@ static int felix_mdio_write(struct mii_dev *bus, int addr, int devad, int reg,
 }
 
 /* set up serdes for SGMII */
-static int felix_init_sgmii(struct udevice *dev, int port, int if_type)
+static void felix_init_sgmii(struct mii_dev *imdio, int pidx, bool an)
 {
-	struct felix_priv *priv = dev_get_priv(dev);
-	bool is2500 = false;
 	u16 reg;
 
 	/* set up PCS lane address */
-	out_le32(FELIX_SERDES_SGMIICR1(port), FELIX_SERDES_SGMIICR1_SGPCS |
-		 FELIX_SERDES_SGMIICR1_MDEV(port));
-
-	if (!priv->imdio.priv)
-		return 0;
-
-	if (if_type == PHY_INTERFACE_MODE_SGMII_2500)
-		is2500 = true;
+	out_le32(FELIX_SERDES_SGMIICR1(pidx), FELIX_SERDES_SGMIICR1_SGPCS |
+		 FELIX_SERDES_SGMIICR1_MDEV(pidx));
 
 	/*
 	 * Set to SGMII mode, for 1Gbps enable AN, for 2.5Gbps set fixed speed.
@@ -157,65 +148,58 @@ static int felix_init_sgmii(struct udevice *dev, int port, int if_type)
 	 * but intentional.
 	 */
 	reg = ENETC_PCS_IF_MODE_SGMII;
-	reg |= is2500 ? ENETC_PCS_IF_MODE_SPEED_1G : ENETC_PCS_IF_MODE_SGMII_AN;
-	felix_mdio_write(&priv->imdio, port, MDIO_DEVAD_NONE,
+	reg |= an ? ENETC_PCS_IF_MODE_SGMII_AN : ENETC_PCS_IF_MODE_SPEED_1G;
+	felix_mdio_write(imdio, pidx, MDIO_DEVAD_NONE,
 			 ENETC_PCS_IF_MODE, reg);
 
 	/* Dev ability - SGMII */
-	felix_mdio_write(&priv->imdio, port, MDIO_DEVAD_NONE,
+	felix_mdio_write(imdio, pidx, MDIO_DEVAD_NONE,
 			 ENETC_PCS_DEV_ABILITY, ENETC_PCS_DEV_ABILITY_SGMII);
 
 	/* Adjust link timer for SGMII */
-	felix_mdio_write(&priv->imdio, port, MDIO_DEVAD_NONE,
+	felix_mdio_write(imdio, pidx, MDIO_DEVAD_NONE,
 			 ENETC_PCS_LINK_TIMER1, ENETC_PCS_LINK_TIMER1_VAL);
-	felix_mdio_write(&priv->imdio, port, MDIO_DEVAD_NONE,
+	felix_mdio_write(imdio, pidx, MDIO_DEVAD_NONE,
 			 ENETC_PCS_LINK_TIMER2, ENETC_PCS_LINK_TIMER2_VAL);
 
 	reg = ENETC_PCS_CR_DEF_VAL;
-	reg |= is2500 ? ENETC_PCS_CR_RST : ENETC_PCS_CR_RESET_AN;
+	reg |= an ? ENETC_PCS_CR_RESET_AN : ENETC_PCS_CR_RST;
 	/* restart PCS AN */
-	felix_mdio_write(&priv->imdio, port, MDIO_DEVAD_NONE,
+	felix_mdio_write(imdio, pidx, MDIO_DEVAD_NONE,
 			 ENETC_PCS_CR, reg);
-
-	return 0;
 }
 
 /* set up MAC and serdes for (Q)SXGMII */
-static int felix_init_sxgmii(struct udevice *dev, int port)
+static int felix_init_sxgmii(struct mii_dev *imdio, int pidx)
 {
-	struct felix_priv *priv = dev_get_priv(dev);
-	int to = 1000;
+	int timeout = 1000;
 
 	/* set up transit equalization control on serdes lane */
 	out_le32(FELIX_SERDES_LNATECR0(1), FELIX_SERDES_LNATECR0_ADPT_EQ);
 
-	if (!priv->imdio.priv)
-		return 0;
-
 	/*reset lane */
-	felix_mdio_write(&priv->imdio, port, MDIO_MMD_PCS, FELIX_PCS_CTRL,
+	felix_mdio_write(imdio, pidx, MDIO_MMD_PCS, FELIX_PCS_CTRL,
 			 FELIX_PCS_CTRL_RST);
-	while (felix_mdio_read(&priv->imdio, port, MDIO_MMD_PCS,
+	while (felix_mdio_read(imdio, pidx, MDIO_MMD_PCS,
 			       FELIX_PCS_CTRL) & FELIX_PCS_CTRL_RST &&
-			--to) {
+			--timeout) {
 		mdelay(10);
 	}
-	if (felix_mdio_read(&priv->imdio, port, MDIO_MMD_PCS,
+	if (felix_mdio_read(imdio, pidx, MDIO_MMD_PCS,
 			    FELIX_PCS_CTRL) & FELIX_PCS_CTRL_RST)
-		dev_dbg(port, "PCS reset time-out\n");
+		return -ETIME;
 
 	/* Dev ability - SXGMII */
-	felix_mdio_write(&priv->imdio, port, ENETC_PCS_DEVAD_REPL,
+	felix_mdio_write(imdio, pidx, ENETC_PCS_DEVAD_REPL,
 			 ENETC_PCS_DEV_ABILITY, ENETC_PCS_DEV_ABILITY_SXGMII);
 
 	/* Restart PCS AN */
-	felix_mdio_write(&priv->imdio, port, ENETC_PCS_DEVAD_REPL,
-			 ENETC_PCS_CR,
+	felix_mdio_write(imdio, pidx, ENETC_PCS_DEVAD_REPL, ENETC_PCS_CR,
 			 ENETC_PCS_CR_RST | ENETC_PCS_CR_RESET_AN);
-	felix_mdio_write(&priv->imdio, port, ENETC_PCS_DEVAD_REPL,
+	felix_mdio_write(imdio, pidx, ENETC_PCS_DEVAD_REPL,
 			 ENETC_PCS_REPL_LINK_TIMER_1,
 			 ENETC_PCS_REPL_LINK_TIMER_1_DEF);
-	felix_mdio_write(&priv->imdio, port, ENETC_PCS_DEVAD_REPL,
+	felix_mdio_write(imdio, pidx, ENETC_PCS_DEVAD_REPL,
 			 ENETC_PCS_REPL_LINK_TIMER_2,
 			 ENETC_PCS_REPL_LINK_TIMER_2_DEF);
 
@@ -223,60 +207,46 @@ static int felix_init_sxgmii(struct udevice *dev, int port)
 }
 
 /* Apply protocol specific configuration to MAC, serdes as needed */
-static void felix_start_pcs(struct udevice *dev, int port)
+static void felix_start_pcs(struct udevice *dev, int port,
+			    struct phy_device *phy, struct mii_dev *imdio)
 {
-	struct dsa_perdev_platdata *platdata = dev->platdata;
-	struct felix_priv *priv = dev_get_priv(dev);
-	const char *if_str;
-	int if_type;
+	bool autoneg = true;
 
-	if_type = PHY_INTERFACE_MODE_NONE;
+	if (phy->phy_id == PHY_FIXED_ID ||
+	    phy->interface == PHY_INTERFACE_MODE_SGMII_2500)
+		autoneg = false;
 
-	priv->imdio.read = felix_mdio_read;
-	priv->imdio.write = felix_mdio_write;
-	priv->imdio.priv = priv->imdio_base + FELIX_PM_IMDIO_BASE;
-	strncpy(priv->imdio.name, dev->name, MDIO_NAME_LEN);
-
-	if_str = ofnode_read_string(platdata->port[port].node, "phy-mode");
-	if (if_str)
-		if_type = phy_get_interface_by_name(if_str);
-	else
-		dev_dbg(port,
-			"phy-mode property not found, defaulting to NONE\n");
-	if (if_type < 0)
-		if_type = PHY_INTERFACE_MODE_NONE;
-
-	switch (if_type) {
+	switch (phy->interface) {
 	case PHY_INTERFACE_MODE_SGMII:
 	case PHY_INTERFACE_MODE_SGMII_2500:
 	case PHY_INTERFACE_MODE_QSGMII:
-		felix_init_sgmii(dev, port, if_type);
+		felix_init_sgmii(imdio, port, autoneg);
 		break;
 	case PHY_INTERFACE_MODE_XGMII:
 	case PHY_INTERFACE_MODE_XFI:
 	case PHY_INTERFACE_MODE_USXGMII:
-		felix_init_sxgmii(dev, port);
+		if (felix_init_sxgmii(imdio, port))
+			dev_err(dev, "PCS reset timeout on port %d\n", port);
+		break;
+	default:
 		break;
 	}
 }
 
-void felix_init(struct udevice *dev)
+static void felix_init(struct udevice *dev)
 {
-	struct dsa_perdev_platdata *platdata = dev->platdata;
+	struct dsa_pdata *pdata = dev_get_uclass_plat(dev);
 	struct felix_priv *priv = dev_get_priv(dev);
-	int supported, to = 100, port;
 	void *base = priv->regs_base;
-	struct phy_device *phy;
-
-	dev_dbg(dev, "trying to set up L2 switch\n");
+	int timeout = 100;
 
 	/* Init core memories */
 	out_le32(base + FELIX_SYS_RAM_CTRL, FELIX_SYS_RAM_CTRL_INIT);
 	while (in_le32(base + FELIX_SYS_RAM_CTRL) & FELIX_SYS_RAM_CTRL_INIT &&
-	       --to)
+	       --timeout)
 		udelay(10);
 	if (in_le32(base + FELIX_SYS_RAM_CTRL) & FELIX_SYS_RAM_CTRL_INIT)
-		dev_dbg(dev, "Time-out waiting for switch memories\n");
+		dev_err(dev, "Timeout waiting for switch memories\n");
 
 	/* Start switch core, set up ES0, IS1, IS2 */
 	out_le32(base + FELIX_SYS_SYSTEM, FELIX_SYS_SYSTEM_EN);
@@ -285,41 +255,16 @@ void felix_init(struct udevice *dev)
 	out_le32(base + FELIX_IS2_TCAM_CTRL, FELIX_IS2_TCAM_CTRL_EN);
 	udelay(20);
 
-	supported = PHY_GBIT_FEATURES | SUPPORTED_2500baseX_Full;
-
-	for (port = 0; port < FELIX_PORT_COUNT; port++) {
-		/* Set up MAC registers */
-		out_le32(base + FELIX_GMII_CLOCK_CFG(port),
-			 FELIX_GMII_CLOCK_CFG_LINK_1G);
-
-		out_le32(base + FELIX_GMII_MAC_IFG_CFG(port),
-			 FELIX_GMII_MAC_IFG_CFG_DEF);
-
-		felix_start_pcs(dev, port);
-
-		phy = platdata->port[port].phy;
-		if (phy) {
-			phy->supported &= supported;
-			phy->advertising &= supported;
-			phy_config(phy);
-		}
-	}
+	priv->imdio.read = felix_mdio_read;
+	priv->imdio.write = felix_mdio_write;
+	priv->imdio.priv = priv->imdio_base + FELIX_PM_IMDIO_BASE;
+	strncpy(priv->imdio.name, dev->name, MDIO_NAME_LEN);
 
 	/* set up CPU port */
 	out_le32(base + FELIX_QSYS_SYSTEM_EXT_CPU_CFG,
-		 FELIX_QSYS_SYSTEM_EXT_CPU_PORT(platdata->cpu_port));
-	out_le32(base + FELIX_SYS_SYSTEM_PORT_MODE(platdata->cpu_port),
+		 FELIX_QSYS_SYSTEM_EXT_CPU_PORT(pdata->cpu_port));
+	out_le32(base + FELIX_SYS_SYSTEM_PORT_MODE(pdata->cpu_port),
 		 FELIX_SYS_SYSTEM_PORT_MODE_CPU);
-}
-
-static int felix_bind(struct udevice *dev)
-{
-	struct dsa_perdev_platdata *pdata = dev->platdata;
-
-	pdata->num_ports = FELIX_PORT_COUNT;
-	pdata->headroom = FELIX_DSA_TAG_LEN;
-
-	return 0;
 }
 
 /*
@@ -332,20 +277,21 @@ static int felix_probe(struct udevice *dev)
 {
 	struct felix_priv *priv = dev_get_priv(dev);
 
-	if (ofnode_valid(dev->node) && !ofnode_is_available(dev->node)) {
+	if (ofnode_valid(dev_ofnode(dev)) &&
+	    !ofnode_is_available(dev_ofnode(dev))) {
 		dev_dbg(dev, "switch disabled\n");
 		return -ENODEV;
 	}
 
 	priv->imdio_base = dm_pci_map_bar(dev, PCI_BASE_ADDRESS_0, 0);
 	if (!priv->imdio_base) {
-		dev_dbg(dev, "failed to map BAR0\n");
+		dev_err(dev, "failed to map BAR0\n");
 		return -EINVAL;
 	}
 
 	priv->regs_base = dm_pci_map_bar(dev, PCI_BASE_ADDRESS_4, 0);
 	if (!priv->regs_base) {
-		dev_dbg(dev, "failed to map BAR4\n");
+		dev_err(dev, "failed to map BAR4\n");
 		return -EINVAL;
 	}
 
@@ -363,10 +309,26 @@ static int felix_probe(struct udevice *dev)
 
 	dm_pci_clrset_config16(dev, PCI_COMMAND, 0, PCI_COMMAND_MEMORY);
 
+	dsa_set_tagging(dev, FELIX_DSA_TAG_LEN, 0);
+
 	/* set up registers */
 	felix_init(dev);
 
 	return 0;
+}
+
+static int felix_port_probe(struct udevice *dev, int port,
+			    struct phy_device *phy)
+{
+	int supported = PHY_GBIT_FEATURES | SUPPORTED_2500baseX_Full;
+	struct felix_priv *priv = dev_get_priv(dev);
+
+	phy->supported &= supported;
+	phy->advertising &= supported;
+
+	felix_start_pcs(dev, port, phy, &priv->imdio);
+
+	return phy_config(phy);
 }
 
 static int felix_port_enable(struct udevice *dev, int port,
@@ -374,6 +336,13 @@ static int felix_port_enable(struct udevice *dev, int port,
 {
 	struct felix_priv *priv = dev_get_priv(dev);
 	void *base = priv->regs_base;
+
+	/* Set up MAC registers */
+	out_le32(base + FELIX_GMII_CLOCK_CFG(port),
+		 FELIX_GMII_CLOCK_CFG_LINK_1G);
+
+	out_le32(base + FELIX_GMII_MAC_IFG_CFG(port),
+		 FELIX_GMII_MAC_IFG_CFG_DEF);
 
 	out_le32(base + FELIX_GMII_MAC_ENA_CFG(port),
 		 FELIX_GMII_MAX_ENA_CFG_TX | FELIX_GMII_MAX_ENA_CFG_RX);
@@ -383,67 +352,64 @@ static int felix_port_enable(struct udevice *dev, int port,
 		 FELIX_QSYS_SYSTEM_SW_PORT_LOSSY |
 		 FELIX_QSYS_SYSTEM_SW_PORT_SCH(1));
 
-	if (phy)
-		phy_startup(phy);
-	return 0;
+	return phy_startup(phy);
 }
 
-static void felix_port_disable(struct udevice *dev, int port,
+static void felix_port_disable(struct udevice *dev, int pidx,
 			       struct phy_device *phy)
 {
 	struct felix_priv *priv = dev_get_priv(dev);
 	void *base = priv->regs_base;
 
-	out_le32(base + FELIX_GMII_MAC_ENA_CFG(port), 0);
+	out_le32(base + FELIX_GMII_MAC_ENA_CFG(pidx), 0);
 
-	out_le32(base + FELIX_QSYS_SYSTEM_SW_PORT_MODE(port),
+	out_le32(base + FELIX_QSYS_SYSTEM_SW_PORT_MODE(pidx),
 		 FELIX_QSYS_SYSTEM_SW_PORT_LOSSY |
 		 FELIX_QSYS_SYSTEM_SW_PORT_SCH(1));
 
 	/*
-	 * we don't call phy_shutdown here to avoind waiting next time we use
+	 * we don't call phy_shutdown here to avoid waiting next time we use
 	 * the port, but the downside is that remote side will think we're
 	 * actively processing traffic although we are not.
 	 */
 }
 
-static int felix_xmit(struct udevice *dev, int port, void *packet, int length)
+static int felix_xmit(struct udevice *dev, int pidx, void *packet, int length)
 {
 	struct felix_dsa_tag *tag = packet;
 
 	tag->magic = FELIX_DSA_TAG_MAGIC;
-	tag->meta[FELIX_DSA_TAG_INJ_PORT] = FELIX_DSA_TAG_INJ_PORT_SET(port);
+	tag->meta[FELIX_DSA_TAG_INJ_PORT] = FELIX_DSA_TAG_INJ_PORT_SET(pidx);
 
 	return 0;
 }
 
-static int felix_rcv(struct udevice *dev, int *port, void *packet, int length)
+static int felix_rcv(struct udevice *dev, int *pidx, void *packet, int length)
 {
 	struct felix_dsa_tag *tag = packet;
 
 	if (tag->magic != FELIX_DSA_TAG_MAGIC)
 		return -EINVAL;
 
-	*port = FELIX_DSA_TAG_EXT_PORT_GET(tag->meta[FELIX_DSA_TAG_EXT_PORT]);
+	*pidx = FELIX_DSA_TAG_EXT_PORT_GET(tag->meta[FELIX_DSA_TAG_EXT_PORT]);
 
 	return 0;
 }
 
 static const struct dsa_ops felix_dsa_ops = {
-	.port_enable  = felix_port_enable,
-	.port_disable = felix_port_disable,
-	.xmit         = felix_xmit,
-	.rcv          = felix_rcv,
+	.port_probe	= felix_port_probe,
+	.port_enable	= felix_port_enable,
+	.port_disable	= felix_port_disable,
+	.xmit		= felix_xmit,
+	.rcv		= felix_rcv,
 };
 
 U_BOOT_DRIVER(felix_ethsw) = {
-	.name	= "felix-switch",
-	.id	= UCLASS_DSA,
-	.bind	= felix_bind,
-	.probe	= felix_probe,
-	.ops    = &felix_dsa_ops,
-	.priv_auto_alloc_size = sizeof(struct felix_priv),
-	.platdata_auto_alloc_size = sizeof(struct dsa_perdev_platdata),
+	.name		= "felix-switch",
+	.id		= UCLASS_DSA,
+	.probe		= felix_probe,
+	.ops		= &felix_dsa_ops,
+	.priv_auto	= sizeof(struct felix_priv),
 };
 
 static struct pci_device_id felix_ethsw_ids[] = {

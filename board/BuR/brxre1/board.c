@@ -11,6 +11,7 @@
 #include <common.h>
 #include <env.h>
 #include <errno.h>
+#include <init.h>
 #include <spl.h>
 #include <asm/arch/cpu.h>
 #include <asm/arch/hardware.h>
@@ -20,6 +21,7 @@
 #include <asm/arch/gpio.h>
 #include <asm/arch/sys_proto.h>
 #include <asm/arch/mem.h>
+#include <asm/global_data.h>
 #include <asm/io.h>
 #include <asm/emif.h>
 #include <asm/gpio.h>

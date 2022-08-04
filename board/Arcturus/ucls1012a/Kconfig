@@ -38,7 +38,7 @@ config SPI_FLASH_128M
 
 config HX3_HUB_INIT
 	bool "Init HX3 USB HUB"
-	def_bool y
+	def_bool n
 
 config FIRM_ADDR1
 	hex "Firmware Env Base address 1"

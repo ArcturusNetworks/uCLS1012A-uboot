@@ -1,26 +1,60 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2019 NXP
+ * Copyright 2019-2021 NXP
  */
 
 #include <net/dsa.h>
 #include <dm/lists.h>
+#include <dm/device_compat.h>
 #include <dm/device-internal.h>
 #include <dm/uclass-internal.h>
+#include <linux/bitmap.h>
 #include <miiphy.h>
 
 #define DSA_PORT_CHILD_DRV_NAME "dsa-port"
 
-/* helper that returns the DSA master Ethernet device. */
-static struct udevice *dsa_port_get_master(struct udevice *pdev, bool probe)
+/* per-device internal state structure */
+struct dsa_priv {
+	struct phy_device *cpu_port_fixed_phy;
+	struct udevice *master_dev;
+	int num_ports;
+	u32 cpu_port;
+	int headroom;
+	int tailroom;
+};
+
+/* external API */
+int dsa_set_tagging(struct udevice *dev, ushort headroom, ushort tailroom)
 {
-	struct udevice *dev = dev_get_parent(pdev);
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
+	struct dsa_priv *priv;
 
-	if (probe)
-		device_probe(platdata->master_dev);
+	if (!dev)
+		return -EINVAL;
 
-	return platdata->master_dev;
+	if (headroom + tailroom > DSA_MAX_OVR)
+		return -EINVAL;
+
+	priv = dev_get_uclass_priv(dev);
+
+	if (headroom > 0)
+		priv->headroom = headroom;
+	if (tailroom > 0)
+		priv->tailroom = tailroom;
+
+	return 0;
+}
+
+/* returns the DSA master Ethernet device */
+struct udevice *dsa_get_master(struct udevice *dev)
+{
+	struct dsa_priv *priv;
+
+	if (!dev)
+		return NULL;
+
+	priv = dev_get_uclass_priv(dev);
+
+	return priv->master_dev;
 }
 
 /*
@@ -30,26 +64,22 @@ static struct udevice *dsa_port_get_master(struct udevice *pdev, bool probe)
 static int dsa_port_start(struct udevice *pdev)
 {
 	struct udevice *dev = dev_get_parent(pdev);
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
-	struct udevice *master = dsa_port_get_master(pdev, true);
-	struct dsa_port_platdata *ppriv = dev_get_priv(pdev);
+	struct dsa_priv *priv = dev_get_uclass_priv(dev);
+	struct udevice *master = dsa_get_master(dev);
 	struct dsa_ops *ops = dsa_get_ops(dev);
 	int err;
 
-	if (!ppriv || !platdata)
-		return -EINVAL;
-
-	if (!master) {
-		dev_err(pdev, "DSA master Ethernet device not found!\n");
-		return -EINVAL;
-	}
-
 	if (ops->port_enable) {
-		err = ops->port_enable(dev, ppriv->index, ppriv->phy);
+		struct dsa_port_pdata *port_pdata;
+
+		port_pdata = dev_get_parent_plat(pdev);
+		err = ops->port_enable(dev, port_pdata->index,
+				       port_pdata->phy);
 		if (err)
 			return err;
-		err = ops->port_enable(dev, platdata->cpu_port,
-				       platdata->port[platdata->cpu_port].phy);
+
+		err = ops->port_enable(dev, priv->cpu_port,
+				       priv->cpu_port_fixed_phy);
 		if (err)
 			return err;
 	}
@@ -61,27 +91,19 @@ static int dsa_port_start(struct udevice *pdev)
 static void dsa_port_stop(struct udevice *pdev)
 {
 	struct udevice *dev = dev_get_parent(pdev);
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
-	struct udevice *master = dsa_port_get_master(pdev, false);
-	struct dsa_port_platdata *ppriv = dev_get_priv(pdev);
+	struct dsa_priv *priv = dev_get_uclass_priv(dev);
+	struct udevice *master = dsa_get_master(dev);
 	struct dsa_ops *ops = dsa_get_ops(dev);
 
-	if (!ppriv || !platdata)
-		return;
-
 	if (ops->port_disable) {
-		ops->port_disable(dev, ppriv->index, ppriv->phy);
-		ops->port_disable(dev, platdata->cpu_port,
-				  platdata->port[platdata->cpu_port].phy);
+		struct dsa_port_pdata *port_pdata;
+
+		port_pdata = dev_get_parent_plat(pdev);
+		ops->port_disable(dev, port_pdata->index, port_pdata->phy);
+		ops->port_disable(dev, priv->cpu_port, NULL);
 	}
 
-	/*
-	 * stop master only if it's active, don't probe it otherwise.
-	 * Under normal usage it would be active because we're using it, but
-	 * during tear-down it may have been removed ahead of us.
-	 */
-	if (master && device_active(master))
-		eth_get_ops(master)->stop(master);
+	eth_get_ops(master)->stop(master);
 }
 
 /*
@@ -92,59 +114,56 @@ static void dsa_port_stop(struct udevice *pdev)
 static int dsa_port_send(struct udevice *pdev, void *packet, int length)
 {
 	struct udevice *dev = dev_get_parent(pdev);
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
-	struct udevice *master = dsa_port_get_master(pdev, true);
-	struct dsa_port_platdata *ppriv = dev_get_priv(pdev);
+	struct dsa_priv *priv = dev_get_uclass_priv(dev);
+	int head = priv->headroom, tail = priv->tailroom;
+	struct udevice *master = dsa_get_master(dev);
 	struct dsa_ops *ops = dsa_get_ops(dev);
-	uchar dsa_packet[DSA_MAX_FRAME_SIZE];
-	int head = platdata->headroom, tail = platdata->tailroom;
+	uchar dsa_packet_tmp[PKTSIZE_ALIGN];
+	struct dsa_port_pdata *port_pdata;
 	int err;
 
-	if (!master)
+	if (length + head + tail > PKTSIZE_ALIGN)
 		return -EINVAL;
 
-	if (length + head + tail > DSA_MAX_FRAME_SIZE)
-		return -EINVAL;
-
-	memset(dsa_packet, 0, head);
-	memset(dsa_packet + head + length, 0, tail);
-	memcpy(dsa_packet + head, packet, length);
+	memset(dsa_packet_tmp, 0, head);
+	memset(dsa_packet_tmp + head + length, 0, tail);
+	memcpy(dsa_packet_tmp + head, packet, length);
 	length += head + tail;
+	/* copy back to preserve original buffer alignment */
+	memcpy(packet, dsa_packet_tmp, length);
 
-	err = ops->xmit(dev, ppriv->index, dsa_packet, length);
+	port_pdata = dev_get_parent_plat(pdev);
+	err = ops->xmit(dev, port_pdata->index, packet, length);
 	if (err)
 		return err;
 
-	return eth_get_ops(master)->send(master, dsa_packet, length);
+	return eth_get_ops(master)->send(master, packet, length);
 }
 
 /* Receive a frame from master Ethernet, process it and pass it on */
 static int dsa_port_recv(struct udevice *pdev, int flags, uchar **packetp)
 {
 	struct udevice *dev = dev_get_parent(pdev);
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
-	struct udevice *master = dsa_port_get_master(pdev, true);
-	struct dsa_port_platdata *ppriv = dev_get_priv(pdev);
+	struct dsa_priv *priv = dev_get_uclass_priv(dev);
+	int head = priv->headroom, tail = priv->tailroom;
+	struct udevice *master = dsa_get_master(dev);
 	struct dsa_ops *ops = dsa_get_ops(dev);
-	int head = platdata->headroom, tail = platdata->tailroom;
+	struct dsa_port_pdata *port_pdata;
 	int length, port_index, err;
-
-	if (!master)
-		return -EINVAL;
 
 	length = eth_get_ops(master)->recv(master, flags, packetp);
 	if (length <= 0)
 		return length;
 
 	/*
-	 * if we receive frames from a different port or frames that DSA driver
+	 * If we receive frames from a different port or frames that DSA driver
 	 * doesn't like we discard them here.
 	 * In case of discard we return with no frame and expect to be called
-	 * again instead of looping here, so upper layer can deal with timeouts
-	 * and ctrl-c
+	 * again instead of looping here, so upper layer can deal with timeouts.
 	 */
+	port_pdata = dev_get_parent_plat(pdev);
 	err = ops->rcv(dev, &port_index, *packetp, length);
-	if (err || port_index != ppriv->index || (length <= head + tail)) {
+	if (err || port_index != port_pdata->index || (length <= head + tail)) {
 		if (eth_get_ops(master)->free_pkt)
 			eth_get_ops(master)->free_pkt(master, *packetp, length);
 		return -EAGAIN;
@@ -162,19 +181,53 @@ static int dsa_port_recv(struct udevice *pdev, int flags, uchar **packetp)
 static int dsa_port_free_pkt(struct udevice *pdev, uchar *packet, int length)
 {
 	struct udevice *dev = dev_get_parent(pdev);
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
-	struct udevice *master = dsa_port_get_master(pdev, true);
+	struct udevice *master = dsa_get_master(dev);
+	struct dsa_priv *priv;
 
-	if (!master)
-		return -EINVAL;
-
+	priv = dev_get_uclass_priv(dev);
 	if (eth_get_ops(master)->free_pkt) {
 		/* return the original pointer and length to master Eth */
-		packet -= platdata->headroom;
-		length += platdata->headroom - platdata->tailroom;
+		packet -= priv->headroom;
+		length += priv->headroom - priv->tailroom;
 
 		return eth_get_ops(master)->free_pkt(master, packet, length);
 	}
+
+	return 0;
+}
+
+static int dsa_port_of_to_pdata(struct udevice *pdev)
+{
+	struct dsa_port_pdata *port_pdata;
+	struct dsa_pdata *dsa_pdata;
+	struct eth_pdata *eth_pdata;
+	struct udevice *dev;
+	const char *label;
+	u32 index;
+	int err;
+
+	if (!pdev)
+		return -ENODEV;
+
+	err = ofnode_read_u32(dev_ofnode(pdev), "reg", &index);
+	if (err)
+		return err;
+
+	dev = dev_get_parent(pdev);
+	dsa_pdata = dev_get_uclass_plat(dev);
+
+	port_pdata = dev_get_parent_plat(pdev);
+	port_pdata->index = index;
+
+	label = ofnode_read_string(dev_ofnode(pdev), "label");
+	if (label)
+		strncpy(port_pdata->name, label, DSA_PORT_NAME_LENGTH);
+
+	eth_pdata = dev_get_plat(pdev);
+	eth_pdata->priv_pdata = port_pdata;
+
+	dev_dbg(pdev, "port %d node %s\n", port_pdata->index,
+		ofnode_get_name(dev_ofnode(pdev)));
 
 	return 0;
 }
@@ -187,183 +240,238 @@ static const struct eth_ops dsa_port_ops = {
 	.free_pkt	= dsa_port_free_pkt,
 };
 
-U_BOOT_DRIVER(dsa_port) = {
-	.name	= DSA_PORT_CHILD_DRV_NAME,
-	.id	= UCLASS_ETH,
-	.ops	= &dsa_port_ops,
-	.platdata_auto_alloc_size = sizeof(struct eth_pdata),
-};
-
 /*
- * reads the DT properties of the given DSA port.
- * If the return value is != 0 then the port is skipped
+ * Inherit port's hwaddr from the DSA master, unless the port already has a
+ * unique MAC address specified in the environment.
  */
-static int dsa_port_parse_dt(struct udevice *dev, int port_index,
-			     ofnode ports_node, bool *is_cpu)
+static void dsa_port_set_hwaddr(struct udevice *pdev, struct udevice *master)
 {
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
-	struct dsa_port_platdata *port = &platdata->port[port_index];
-	ofnode temp_node;
-	u32 ethernet;
+	struct eth_pdata *eth_pdata, *master_pdata;
+	unsigned char env_enetaddr[ARP_HLEN];
+
+	eth_env_get_enetaddr_by_index("eth", dev_seq(pdev), env_enetaddr);
+	if (!is_zero_ethaddr(env_enetaddr))
+		return;
+
+	master_pdata = dev_get_plat(master);
+	eth_pdata = dev_get_plat(pdev);
+	memcpy(eth_pdata->enetaddr, master_pdata->enetaddr, ARP_HLEN);
+	eth_env_set_enetaddr_by_index("eth", dev_seq(pdev),
+				      master_pdata->enetaddr);
+}
+
+static int dsa_port_probe(struct udevice *pdev)
+{
+	struct udevice *dev = dev_get_parent(pdev);
+	struct dsa_ops *ops = dsa_get_ops(dev);
+	struct dsa_port_pdata *port_pdata;
+	struct dsa_priv *dsa_priv;
+	struct udevice *master;
+	int err;
+
+	port_pdata = dev_get_parent_plat(pdev);
+	dsa_priv = dev_get_uclass_priv(dev);
+
+	port_pdata->phy = dm_eth_phy_connect(pdev);
+	if (!port_pdata->phy)
+		return -ENODEV;
+
+	master = dsa_get_master(dev);
+	if (!master)
+		return -ENODEV;
 
 	/*
-	 * if we don't have a DT we don't do anything here but the port is
-	 * registered normally
+	 * Probe the master device. We depend on the master device for proper
+	 * operation and we also need it for MAC inheritance below.
+	 *
+	 * TODO: we assume the master device is always there and doesn't get
+	 * removed during runtime.
 	 */
-	if (!ofnode_valid(ports_node))
-		return 0;
+	err = device_probe(master);
+	if (err)
+		return err;
 
-	ofnode_for_each_subnode(temp_node, ports_node) {
-		const char *port_label;
-		u32 reg;
+	dsa_port_set_hwaddr(pdev, master);
 
-		if (ofnode_read_u32(temp_node, "reg", &reg) ||
-		    reg != port_index)
-			continue;
-
-		/* if the port is explicitly disabled in DT skip it */
-		if (!ofnode_is_available(temp_node))
-			return -ENODEV;
-
-		port->node = temp_node;
-
-		dev_dbg(dev, "port %d node %s\n", port->index,
-			ofnode_get_name(port->node));
-
-		/* Use 'label' if present in DT */
-		port_label = ofnode_read_string(port->node, "label");
-		if (port_label)
-			strncpy(port->name, port_label, DSA_PORT_NAME_LENGTH);
-
-		*is_cpu = !ofnode_read_u32(port->node, "ethernet",
-					   &ethernet);
-
-		if (*is_cpu) {
-			platdata->master_node =
-				ofnode_get_by_phandle(ethernet);
-			platdata->cpu_port = port_index;
-
-			dev_dbg(dev, "master node %s on port %d\n",
-				ofnode_get_name(platdata->master_node),
-				port_index);
-		}
-		break;
+	if (ops->port_probe) {
+		err = ops->port_probe(dev, port_pdata->index,
+				      port_pdata->phy);
+		if (err)
+			return err;
 	}
 
 	return 0;
 }
 
-/**
+static int dsa_port_remove(struct udevice *pdev)
+{
+	struct udevice *dev = dev_get_parent(pdev);
+	struct dsa_port_pdata *port_pdata;
+	struct dsa_priv *dsa_priv;
+
+	port_pdata = dev_get_parent_plat(pdev);
+	dsa_priv = dev_get_uclass_priv(dev);
+
+	port_pdata->phy = NULL;
+
+	return 0;
+}
+
+U_BOOT_DRIVER(dsa_port) = {
+	.name	= DSA_PORT_CHILD_DRV_NAME,
+	.id	= UCLASS_ETH,
+	.ops	= &dsa_port_ops,
+	.probe	= dsa_port_probe,
+	.remove	= dsa_port_remove,
+	.of_to_plat = dsa_port_of_to_pdata,
+	.plat_auto = sizeof(struct eth_pdata),
+};
+
+/*
  * This function mostly deals with pulling information out of the device tree
- * into the platdata structure.
- * It goes through the list of switch ports, registers an Eth device for each
- * front panel port and identifies the cpu port connected to master Eth device.
+ * into the pdata structure.
+ * It goes through the list of switch ports, registers an eth device for each
+ * front panel port and identifies the cpu port connected to master eth device.
  * TODO: support cascaded switches
  */
-static int dm_dsa_post_bind(struct udevice *dev)
+static int dsa_post_bind(struct udevice *dev)
 {
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
-	ofnode ports_node = ofnode_null();
-	int first_err = 0, err = 0, i;
+	struct dsa_pdata *pdata = dev_get_uclass_plat(dev);
+	ofnode node = dev_ofnode(dev), pnode;
+	int i, err, first_err = 0;
 
-	if (!platdata) {
-		dev_err(dev, "missing plaform data\n");
+	if (!ofnode_valid(node))
+		return -ENODEV;
+
+	pdata->master_node = ofnode_null();
+
+	node = ofnode_find_subnode(node, "ports");
+	if (!ofnode_valid(node))
+		node = ofnode_find_subnode(node, "ethernet-ports");
+	if (!ofnode_valid(node)) {
+		dev_err(dev, "ports node is missing under DSA device!\n");
 		return -EINVAL;
 	}
 
-	if (platdata->num_ports <= 0 || platdata->num_ports > DSA_MAX_PORTS) {
-		dev_err(dev, "unexpected num_ports value (%d)\n",
-			platdata->num_ports);
+	pdata->num_ports = ofnode_get_child_count(node);
+	if (pdata->num_ports <= 0 || pdata->num_ports > DSA_MAX_PORTS) {
+		dev_err(dev, "invalid number of ports (%d)\n",
+			pdata->num_ports);
 		return -EINVAL;
 	}
 
-	platdata->master_node = ofnode_null();
+	/* look for the CPU port */
+	ofnode_for_each_subnode(pnode, node) {
+		u32 ethernet;
 
-	if (!ofnode_valid(dev->node)) {
-		dev_dbg(dev, "Device doesn't have a valid DT node!\n");
-	} else {
-		ports_node = ofnode_find_subnode(dev->node, "ports");
-		if (!ofnode_valid(ports_node))
-			dev_dbg(dev,
-				"ports node is missing under DSA device!\n");
+		if (ofnode_read_u32(pnode, "ethernet", &ethernet))
+			continue;
+
+		pdata->master_node = ofnode_get_by_phandle(ethernet);
+		pdata->cpu_port_node = pnode;
+		break;
 	}
 
-	for (i = 0; i < platdata->num_ports; i++) {
-		struct dsa_port_platdata *port = &platdata->port[i];
-		bool skip_port, is_cpu = false;
+	if (!ofnode_valid(pdata->master_node)) {
+		dev_err(dev, "master eth node missing!\n");
+		return -EINVAL;
+	}
 
-		port->index = i;
+	if (ofnode_read_u32(pnode, "reg", &pdata->cpu_port)) {
+		dev_err(dev, "CPU port node not valid!\n");
+		return -EINVAL;
+	}
+
+	dev_dbg(dev, "master node %s on port %d\n",
+		ofnode_get_name(pdata->master_node), pdata->cpu_port);
+
+	for (i = 0; i < pdata->num_ports; i++) {
+		char name[DSA_PORT_NAME_LENGTH];
+		struct udevice *pdev;
 
 		/*
-		 * If the driver set up port names in _bind use those, otherwise
-		 * use default ones.
-		 * If present, DT label is used as name and overrides anything
-		 * we may have here.
-		 */
-		if (!strlen(port->name))
-			snprintf(port->name, DSA_PORT_NAME_LENGTH, "%s@%d",
-				 dev->name, i);
-
-		skip_port = !!dsa_port_parse_dt(dev, i, ports_node, &is_cpu);
-
-		/*
-		 * if this is the CPU port don't register it as an ETH device,
+		 * If this is the CPU port don't register it as an ETH device,
 		 * we skip it on purpose since I/O to/from it from the CPU
-		 * isn't useful
-		 * TODO: cpu port may have a PHY and we don't handle that yet.
+		 * isn't useful.
 		 */
-		if (is_cpu || skip_port)
+		if (i == pdata->cpu_port)
+			continue;
+
+		/*
+		 * Set up default port names.  If present, DT port labels
+		 * will override the default port names.
+		 */
+		snprintf(name, DSA_PORT_NAME_LENGTH, "%s@%d", dev->name, i);
+
+		ofnode_for_each_subnode(pnode, node) {
+			u32 reg;
+
+			if (ofnode_read_u32(pnode, "reg", &reg))
+				continue;
+
+			if (reg == i)
+				break;
+		}
+
+		/*
+		 * skip registration if port id not found or if the port
+		 * is explicitly disabled in DT
+		 */
+		if (!ofnode_valid(pnode) || !ofnode_is_available(pnode))
 			continue;
 
 		err = device_bind_driver_to_node(dev, DSA_PORT_CHILD_DRV_NAME,
-						 port->name, port->node,
-						 &port->dev);
+						 name, pnode, &pdev);
+		if (pdev) {
+			struct dsa_port_pdata *port_pdata;
+
+			port_pdata = dev_get_parent_plat(pdev);
+			strncpy(port_pdata->name, name, DSA_PORT_NAME_LENGTH);
+			pdev->name = port_pdata->name;
+		}
 
 		/* try to bind all ports but keep 1st error */
 		if (err && !first_err)
 			first_err = err;
 	}
 
-	if (!ofnode_valid(platdata->master_node))
-		dev_dbg(dev, "DSA master Eth device is missing!\n");
+	if (first_err)
+		return first_err;
 
-	return first_err;
+	dev_dbg(dev, "DSA ports successfully bound\n");
+
+	return 0;
 }
 
 /**
- * This function deals with additional devices around the switch as these should
- * have been bound to drivers by now.
+ * Initialize the uclass per device internal state structure (priv).
  * TODO: pick up references to other switch devices here, if we're cascaded.
  */
-static int dm_dsa_pre_probe(struct udevice *dev)
+static int dsa_pre_probe(struct udevice *dev)
 {
-	struct dsa_perdev_platdata *platdata = dev_get_platdata(dev);
-	int i;
+	struct dsa_pdata *pdata = dev_get_uclass_plat(dev);
+	struct dsa_priv *priv = dev_get_uclass_priv(dev);
 
-	if (!platdata)
-		return -EINVAL;
-
-	if (ofnode_valid(platdata->master_node))
-		uclass_find_device_by_ofnode(UCLASS_ETH, platdata->master_node,
-					     &platdata->master_dev);
-
-	for (i = 0; i < platdata->num_ports; i++) {
-		struct dsa_port_platdata *port = &platdata->port[i];
-
-		if (port->dev) {
-			port->dev->priv = port;
-			port->phy = dm_eth_phy_connect(port->dev);
-		}
+	priv->num_ports = pdata->num_ports;
+	priv->cpu_port = pdata->cpu_port;
+	priv->cpu_port_fixed_phy = fixed_phy_create(pdata->cpu_port_node);
+	if (!priv->cpu_port_fixed_phy) {
+		dev_err(dev, "Failed to register fixed-link for CPU port\n");
+		return -ENODEV;
 	}
 
+	uclass_find_device_by_ofnode(UCLASS_ETH, pdata->master_node,
+				     &priv->master_dev);
 	return 0;
 }
 
 UCLASS_DRIVER(dsa) = {
 	.id = UCLASS_DSA,
 	.name = "dsa",
-	.post_bind  = dm_dsa_post_bind,
-	.pre_probe = dm_dsa_pre_probe,
-	.per_device_platdata_auto_alloc_size =
-			sizeof(struct dsa_perdev_platdata),
+	.post_bind = dsa_post_bind,
+	.pre_probe = dsa_pre_probe,
+	.per_device_auto = sizeof(struct dsa_priv),
+	.per_device_plat_auto = sizeof(struct dsa_pdata),
+	.per_child_plat_auto = sizeof(struct dsa_port_pdata),
+	.flags = DM_UC_FLAG_SEQ_ALIAS,
 };

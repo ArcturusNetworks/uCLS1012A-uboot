@@ -64,11 +64,12 @@ int dcu_set_dvi_encoder(struct fb_videomode *videomode)
 	u8 temp;
 	u16 temp1, temp2;
 	u32 temp3;
-#ifdef CONFIG_DM_I2C
+#if CONFIG_IS_ENABLED(DM_I2C)
 	struct udevice *dev;
 	int ret;
 
-	ret = i2c_get_chip_for_busnum(CONFIG_SYS_I2C_DVI_BUS_NUM, CONFIG_SYS_I2C_DVI_ADDR,
+	ret = i2c_get_chip_for_busnum(CONFIG_SYS_I2C_DVI_BUS_NUM,
+				      CONFIG_SYS_I2C_DVI_ADDR,
 				      1, &dev);
 	if (ret) {
 		printf("%s: Cannot find udev for a bus %d\n", __func__,

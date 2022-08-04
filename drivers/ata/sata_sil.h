@@ -14,19 +14,23 @@
 /*
  * SATA device driver struct for each dev
  */
-typedef struct sil_sata {
+struct sil_sata {
 	char	name[12];
 	void	*port;	/* the port base address */
 	int		lba48;
 	u16		pio;
 	u16		mwdma;
 	u16		udma;
-	pci_dev_t devno;
+#ifdef CONFIG_DM_PCI
+	struct udevice	*devno;
+#else
+	pci_dev_t	devno;
+#endif
 	int		wcache;
 	int		flush;
 	int		flush_ext;
 	int		id;
-} sil_sata_t;
+};
 
 /* sata info for each controller */
 struct sata_info {
@@ -216,7 +220,7 @@ enum {
 #define ATA_MAX_PORTS		32
 struct sil_sata_priv {
 	int		port_num;
-	sil_sata_t	*sil_sata_desc[ATA_MAX_PORTS];
+	struct sil_sata	*sil_sata_desc[ATA_MAX_PORTS];
 };
 #endif
 

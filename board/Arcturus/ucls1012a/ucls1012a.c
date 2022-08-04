@@ -5,7 +5,11 @@
  */
 
 #include <common.h>
+#include <fdt_support.h>
 #include <i2c.h>
+#include <asm/cache.h>
+#include <init.h>
+#include <asm/global_data.h>
 #include <asm/io.h>
 #include <asm/arch/clock.h>
 #include <asm/arch/fsl_serdes.h>
@@ -16,25 +20,24 @@
 #include <asm/arch/soc.h>
 #include <fsl_esdhc.h>
 #include <hwconfig.h>
-#include <env.h>
+#include <env_internal.h>
 #include <fsl_mmdc.h>
 #include <netdev.h>
 #include <fsl_sec.h>
+#include <linux/delay.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
 extern int get_arc_info(void);
+extern int ressurect_arc_info(void);
 extern void set_kargs_parts(char *);
 #ifdef CONFIG_HX3_HUB_INIT
 extern int hx3_hub_init(void);
 #endif
-extern void read_board_rev(void);
-extern char module_rev[4];
+char module_rev[4];
 
 #ifndef CONFIG_SUBTARGET_SOM120
-
 #define MASK_CX_RST	0x10000000
-
 static void reset_cx(void)
 {
 	struct ccsr_gpio *pgpio = (void *)(GPIO2_BASE_ADDR);
@@ -48,35 +51,29 @@ static void reset_cx(void)
 
 	clrbits_be32(&pgpio->gpdat, MASK_CX_RST);
 	/* Pull CX part Reset DOWN */
-	mdelay(50);
 }
 #endif
 
 #if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
+#define MASK_GPIOEX_RST	0x00000002
 static void reset_gpioex(void)
 {
-#define MASK_GPIOEX_RST	0x00000002
-
 	struct ccsr_gpio *pgpio = (void *)(GPIO1_BASE_ADDR);
 
 	/* Set direction output for GPIO1_30 */
 	setbits_be32(&pgpio->gpdir, MASK_GPIOEX_RST);
 
-	setbits_be32(&pgpio->gpdat, MASK_GPIOEX_RST);
-	mdelay(50);
-
 	clrbits_be32(&pgpio->gpdat, MASK_GPIOEX_RST);
 	mdelay(50);
+	setbits_be32(&pgpio->gpdat, MASK_GPIOEX_RST);
 }
 #endif
 
-#define MASK_CPU_RST	0x00000003
+#define MASK_CPU_RST	0x00000001
 void reset_misc(void)
 {
 	struct ccsr_gpio *pgpio = (void *)(GPIO1_BASE_ADDR);
 
-	/* Set direction output for GPIO1_30 (LS1012A rev1.2 cpu reset ) */
-	/* Set direction output for GPIO1_31 (LS1012A rev1.4 cpu reset) */
 	setbits_be32(&pgpio->gpdir, MASK_CPU_RST);
 
 	/* Pull CPU part Reset UP */
@@ -84,14 +81,7 @@ void reset_misc(void)
 	mdelay(500);
 }
 
-static inline unsigned int get_rcw_gpinfo(void)
-{
-	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
-	unsigned int rcw = gur_in32(&gur->rcwsr[9]);
-	return rcw;
-}
-
-static inline unsigned char get_board_rev(int m)
+static unsigned char get_board_rev(int m)
 {
 	if (module_rev[0] == 'R') {
 		if (m == 1)
@@ -104,8 +94,15 @@ static inline unsigned char get_board_rev(int m)
 
 int checkboard(void)
 {
-	unsigned int rcw = get_rcw_gpinfo();
+	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
+	unsigned int rcw = gur_in32(&gur->rcwsr[9]);
 
+#ifndef CONFIG_SUBTARGET_SOM120
+	reset_cx();
+#endif
+#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
+	reset_gpioex();
+#endif
 	module_rev[3] = (rcw >> 24) & 0xFF;
 	module_rev[2] = (rcw >> 16) & 0xFF;
 	module_rev[1] = (rcw >> 8)  & 0xFF;
@@ -116,7 +113,7 @@ int checkboard(void)
 #elif CONFIG_SUBTARGET_SOM120
 	printf("Board: uCLS1012A-SOM120 Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #elif CONFIG_SUBTARGET_SOM2X60
-	printf("Board: uCLS1012A-SOM2X60 Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
+	printf("Board: 006607-CD-MOD-E V%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #else
 	printf("Board: uCLS1012A-SOM Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #endif
@@ -142,7 +139,11 @@ int dram_init(void)
 	gd->ram_size = tfa_get_dram_size();
 
 	if (!gd->ram_size) {
-		gd->ram_size = CONFIG_SYS_SDRAM_SIZE;
+#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60) || defined(CONFIG_SUBTARGET_DONGLE)
+		gd->ram_size = SYS_SDRAM_SIZE_512;
+#else
+		gd->ram_size = SYS_SDRAM_SIZE_1024;
+#endif
 	}
 	return 0;
 }
@@ -150,7 +151,7 @@ int dram_init(void)
 int dram_init(void)
 {
 	struct fsl_mmdc_info mparam = {
-		0x05180000,	/* mdctl */
+		0x04180000,	/* mdctl */
 		0x00030035,	/* mdpdc */
 		0x12554000,	/* mdotc */
 		0xbabf7954,	/* mdcfg0 */
@@ -164,26 +165,13 @@ int dram_init(void)
 		0x0000022a,	/* mpodtctrl */
 		0xa1390003,	/* mpzqhwctrl */
 	};
-#if 0
-	unsigned int rcw = get_rcw_gpinfo();
-
-	if (((rcw >> 8) & 0xFF) == '2') {
-		mparam.mdctl = 0x04180000;
-		gd->ram_size = SYS_SDRAM_SIZE_512;
-	} else {
-		mparam.mdctl = 0x05180000;
-		gd->ram_size = SYS_SDRAM_SIZE_1024;	
-	}
-#else
-#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
+#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60) || defined(CONFIG_SUBTARGET_DONGLE)
 		mparam.mdctl = 0x04180000;
 		gd->ram_size = SYS_SDRAM_SIZE_512;
 #else
 		mparam.mdctl = 0x05180000;
-		gd->ram_size = SYS_SDRAM_SIZE_1024;	
+		gd->ram_size = SYS_SDRAM_SIZE_1024;
 #endif
-#endif
-
 	mmdc_init(&mparam);
 
 #if !defined(CONFIG_SPL) || defined(CONFIG_SPL_BUILD)
@@ -205,36 +193,47 @@ int board_early_init_f(void)
 int last_stage_init(void)
 {
 	u8 id8;
+	int rc;
+	uchar bus = 0;
+	struct udevice *dev = NULL;
 #ifndef CONFIG_SUBTARGET_SOM120
 	u32 id32;
-
-	reset_cx();
 #endif
-#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
-	reset_gpioex();
-#endif
-
-	/* Initialize i2c */
-	i2c_set_bus_num(0);
-
-	if (i2c_read(SYS_I2C_VR5100_ADDR, 0x00, 1, &id8, 1) < 0)
-		printf("Error reading i2c VR5100 information!\n");
+	rc = i2c_get_chip_for_busnum(bus, SYS_I2C_VR5100_ADDR, 1, &dev);
+	if (rc)
+		printf("failed to get device at address 0x%x\n", SYS_I2C_VR5100_ADDR);
 	else {
-		printf("VR5100(0x%x): ready; ", id8);
-		id8 = 0x48;
-		i2c_write(SYS_I2C_VR5100_ADDR, 0x66, 1, &id8, 1);
-		printf("5V SWBST enabled\n");
+		if (dm_i2c_read(dev, 0, &id8, 1) < 0)
+			printf("Error reading i2c VR5100 information!\n");
+		else {
+			printf("VR5100(@0x%x): ready; ", SYS_I2C_VR5100_ADDR);
+			id8 = 0x48;
+			if (dm_i2c_write(dev, 0x66, &id8, 1))
+				printf("i2c write failed\n");
+			printf("5V SWBST enabled\n");
+		}
 	}
-	if (i2c_read(SYS_I2C_NCT72_ADDR, 0xFE, 1, &id8, 1) < 0)
-		printf("Error reading i2c NCT72 information!\n");
-	else
-		printf("NCT72(0x%x): ready\n", id8);
+
+	rc = i2c_get_chip_for_busnum(bus, SYS_I2C_NCT72_ADDR, 1, &dev);
+	if (rc)
+		printf("failed to get device at address 0x%x\n", SYS_I2C_NCT72_ADDR);
+	else {
+		if (dm_i2c_read(dev, 0xFE, &id8, 1) < 0)
+			printf("Error reading i2c NCT72 information!\n");
+		else
+			printf("NCT72(@0x%x): ready\n", SYS_I2C_NCT72_ADDR);
+	}
 
 #ifndef CONFIG_SUBTARGET_SOM120
-	if (i2c_read(SYS_I2C_CX_ADDR, 0x1000, 1, (u8 *)&id32, 1) < 0)
-		printf("Error reading i2c CX2070x information!\n");
-	else
-		printf("CX2070x(0x%x): ready\n", id32);
+	rc = i2c_get_chip_for_busnum(bus, SYS_I2C_CX_ADDR, 1, &dev);
+	if (rc)
+		printf("failed to get device at address 0x%x\n", SYS_I2C_CX_ADDR);
+	else {
+		if (dm_i2c_read(dev, 0x1000, (u8 *)&id32, 1) < 0)
+			printf("Error reading i2c CX2070x information!\n");
+		else
+			printf("CX2070x(@0x%x): ready\n", SYS_I2C_CX_ADDR);
+	}
 #endif
 
 #ifdef CONFIG_HX3_HUB_INIT
@@ -242,6 +241,7 @@ int last_stage_init(void)
 	hx3_hub_init();
 #endif
 
+	ressurect_arc_info();
 	get_arc_info();
 	set_kargs_parts((char *)"1550000.quadspi:");
 
@@ -272,17 +272,13 @@ int board_init(void)
 	gd->env_addr = (ulong)&default_environment[0];
 #endif
 
-#ifdef CONFIG_FSL_CAAM
-	sec_init();
-#endif
-
 #ifdef CONFIG_FSL_LS_PPA
 	ppa_init();
 #endif
 	return 0;
 }
 
-int ft_board_setup(void *blob, bd_t *bd)
+int ft_board_setup(void *blob, struct bd_info *bd)
 {
 	arch_fixup_fdt(blob);
 

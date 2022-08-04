@@ -10,6 +10,7 @@
 #include <common.h>
 #include <dm.h>
 #include <errno.h>
+#include <log.h>
 #include <pci.h>
 
 /* the user can define CONFIG_SYS_PCI_CACHE_LINE_SIZE to avoid problems */
@@ -17,12 +18,11 @@
 #define CONFIG_SYS_PCI_CACHE_LINE_SIZE	8
 #endif
 
-void dm_pciauto_setup_device(struct udevice *dev, int bars_num,
-			     struct pci_region *mem,
-			     struct pci_region *prefetch, struct pci_region *io,
-			     bool enum_only)
+static void dm_pciauto_setup_device(struct udevice *dev, int bars_num,
+				    struct pci_region *mem,
+				    struct pci_region *prefetch,
+				    struct pci_region *io)
 {
-	struct udevice *rp = pci_get_controller(dev);
 	u32 bar_response;
 	pci_size_t bar_size;
 	u16 cmdstat = 0;
@@ -33,9 +33,6 @@ void dm_pciauto_setup_device(struct udevice *dev, int bars_num,
 	struct pci_region *bar_res = NULL;
 	int found_mem64 = 0;
 	u16 class;
-	int pos;
-	u16 val, vendor, dev_id;
-	u8 rev;
 
 	dm_pci_read_config16(dev, PCI_COMMAND, &cmdstat);
 	cmdstat = (cmdstat & ~(PCI_COMMAND_IO | PCI_COMMAND_MEMORY)) |
@@ -43,23 +40,24 @@ void dm_pciauto_setup_device(struct udevice *dev, int bars_num,
 
 	for (bar = PCI_BASE_ADDRESS_0;
 	     bar < PCI_BASE_ADDRESS_0 + (bars_num * 4); bar += 4) {
+		int ret = 0;
+
 		/* Tickle the BAR and get the response */
-		if (!enum_only)
-			dm_pci_write_config32(dev, bar, 0xffffffff);
+		dm_pci_write_config32(dev, bar, 0xffffffff);
 		dm_pci_read_config32(dev, bar, &bar_response);
 
-		/* If BAR is not implemented go to the next BAR */
-		if (!bar_response)
+		/* If BAR is not implemented (or invalid) go to the next BAR */
+		if (!bar_response || bar_response == 0xffffffff)
 			continue;
 
 		found_mem64 = 0;
 
 		/* Check the BAR type and set our address mask */
 		if (bar_response & PCI_BASE_ADDRESS_SPACE) {
-			bar_size = ((~(bar_response & PCI_BASE_ADDRESS_IO_MASK))
-				   & 0xffff) + 1;
-			if (!enum_only)
-				bar_res = io;
+			bar_size = bar_response & PCI_BASE_ADDRESS_IO_MASK;
+			bar_size &= ~(bar_size - 1);
+
+			bar_res = io;
 
 			debug("PCI Autoconfig: BAR %d, I/O, size=0x%llx, ",
 			      bar_nr, (unsigned long long)bar_size);
@@ -69,10 +67,7 @@ void dm_pciauto_setup_device(struct udevice *dev, int bars_num,
 				u32 bar_response_upper;
 				u64 bar64;
 
-				if (!enum_only) {
-					dm_pci_write_config32(dev, bar + 4,
-							      0xffffffff);
-				}
+				dm_pci_write_config32(dev, bar + 4, 0xffffffff);
 				dm_pci_read_config32(dev, bar + 4,
 						     &bar_response_upper);
 
@@ -81,29 +76,29 @@ void dm_pciauto_setup_device(struct udevice *dev, int bars_num,
 
 				bar_size = ~(bar64 & PCI_BASE_ADDRESS_MEM_MASK)
 						+ 1;
-				if (!enum_only)
-					found_mem64 = 1;
+				found_mem64 = 1;
 			} else {
 				bar_size = (u32)(~(bar_response &
 						PCI_BASE_ADDRESS_MEM_MASK) + 1);
 			}
-			if (!enum_only) {
-				if (prefetch && (bar_response &
-					    PCI_BASE_ADDRESS_MEM_PREFETCH)) {
-					bar_res = prefetch;
-				} else {
-					bar_res = mem;
-				}
-			}
+
+			if (prefetch &&
+			    (bar_response & PCI_BASE_ADDRESS_MEM_PREFETCH))
+				bar_res = prefetch;
+			else
+				bar_res = mem;
 
 			debug("PCI Autoconfig: BAR %d, %s, size=0x%llx, ",
 			      bar_nr, bar_res == prefetch ? "Prf" : "Mem",
 			      (unsigned long long)bar_size);
 		}
 
-		if (!enum_only && pciauto_region_allocate(bar_res, bar_size,
-							  &bar_value,
-							  found_mem64) == 0) {
+		ret = pciauto_region_allocate(bar_res, bar_size,
+					      &bar_value, found_mem64);
+		if (ret)
+			printf("PCI: Failed autoconfig bar %x\n", bar);
+
+		if (!ret) {
 			/* Write it out and update our limit */
 			dm_pci_write_config32(dev, bar, (u32)bar_value);
 
@@ -131,28 +126,24 @@ void dm_pciauto_setup_device(struct udevice *dev, int bars_num,
 		bar_nr++;
 	}
 
-	if (!enum_only) {
-		/* Configure the expansion ROM address */
-		dm_pci_read_config8(dev, PCI_HEADER_TYPE, &header_type);
-		header_type &= 0x7f;
-		if (header_type != PCI_HEADER_TYPE_CARDBUS) {
-			rom_addr = (header_type == PCI_HEADER_TYPE_NORMAL) ?
-				PCI_ROM_ADDRESS : PCI_ROM_ADDRESS1;
-			dm_pci_write_config32(dev, rom_addr, 0xfffffffe);
-			dm_pci_read_config32(dev, rom_addr, &bar_response);
-			if (bar_response) {
-				bar_size = -(bar_response & ~1);
-				debug("PCI Autoconfig: ROM, size=%#x, ",
-				      (unsigned int)bar_size);
-				if (pciauto_region_allocate(mem, bar_size,
-							    &bar_value,
-							    false) == 0) {
-					dm_pci_write_config32(dev, rom_addr,
-							      bar_value);
-				}
-				cmdstat |= PCI_COMMAND_MEMORY;
-				debug("\n");
+	/* Configure the expansion ROM address */
+	dm_pci_read_config8(dev, PCI_HEADER_TYPE, &header_type);
+	header_type &= 0x7f;
+	if (header_type != PCI_HEADER_TYPE_CARDBUS) {
+		rom_addr = (header_type == PCI_HEADER_TYPE_NORMAL) ?
+			PCI_ROM_ADDRESS : PCI_ROM_ADDRESS1;
+		dm_pci_write_config32(dev, rom_addr, 0xfffffffe);
+		dm_pci_read_config32(dev, rom_addr, &bar_response);
+		if (bar_response) {
+			bar_size = -(bar_response & ~1);
+			debug("PCI Autoconfig: ROM, size=%#x, ",
+			      (unsigned int)bar_size);
+			if (pciauto_region_allocate(mem, bar_size, &bar_value,
+						    false) == 0) {
+				dm_pci_write_config32(dev, rom_addr, bar_value);
 			}
+			cmdstat |= PCI_COMMAND_MEMORY;
+			debug("\n");
 		}
 	}
 
@@ -165,36 +156,6 @@ void dm_pciauto_setup_device(struct udevice *dev, int bars_num,
 	dm_pci_write_config8(dev, PCI_CACHE_LINE_SIZE,
 			     CONFIG_SYS_PCI_CACHE_LINE_SIZE);
 	dm_pci_write_config8(dev, PCI_LATENCY_TIMER, 0x80);
-
-	/*
-	 * When NXP LAYERSCAPE Gen4 PCIe controller is sending multiple split
-	 * completions and ACK latency expires indicating that ACK should be
-	 * send at priority. But because of large number of split completions
-	 * and FC update DLLP, the controller does not give priority to ACK
-	 * transmission. This results into ACK latency timer timeout error at
-	 * the link partner and the pending TLPs are replayed by the link
-	 * partner again.
-	 *
-	 * The workaround:
-	 * Restrict the number of completions from the PCIe controller to 1,
-	 * by changing the Max Read Request Size (MRRS) of link partner to the
-	 * same value as Max Packet size (MPS).
-	 *
-	 * So, set both the MPS and MRRS to the minimum 128B.
-	 */
-	dm_pci_read_config16(rp, PCI_VENDOR_ID, &vendor);
-	dm_pci_read_config16(rp, PCI_DEVICE_ID, &dev_id);
-	dm_pci_read_config8(rp, PCI_REVISION_ID, &rev);
-	if (vendor == PCI_VENDOR_ID_FREESCALE &&
-	    dev_id == PCI_DEVICE_ID_LX2160A && rev == 0x10) {
-		pos = dm_pci_find_capability(dev, PCI_CAP_ID_EXP);
-		if (pos) {
-			dm_pci_read_config16(dev, pos + PCI_EXP_DEVCTL, &val);
-			val &= ~(PCI_EXP_DEVCTL_READRQ |
-				 PCI_EXP_DEVCTL_PAYLOAD);
-			dm_pci_write_config16(dev, pos + PCI_EXP_DEVCTL, val);
-		}
-	}
 }
 
 void dm_pciauto_prescan_setup_bridge(struct udevice *dev, int sub_bus)
@@ -216,8 +177,8 @@ void dm_pciauto_prescan_setup_bridge(struct udevice *dev, int sub_bus)
 
 	/* Configure bus number registers */
 	dm_pci_write_config8(dev, PCI_PRIMARY_BUS,
-			     PCI_BUS(dm_pci_get_bdf(dev)) - ctlr->seq);
-	dm_pci_write_config8(dev, PCI_SECONDARY_BUS, sub_bus - ctlr->seq);
+			     PCI_BUS(dm_pci_get_bdf(dev)) - dev_seq(ctlr));
+	dm_pci_write_config8(dev, PCI_SECONDARY_BUS, sub_bus - dev_seq(ctlr));
 	dm_pci_write_config8(dev, PCI_SUBORDINATE_BUS, 0xff);
 
 	if (pci_mem) {
@@ -292,7 +253,7 @@ void dm_pciauto_postscan_setup_bridge(struct udevice *dev, int sub_bus)
 	pci_io = ctlr_hose->pci_io;
 
 	/* Configure bus number registers */
-	dm_pci_write_config8(dev, PCI_SUBORDINATE_BUS, sub_bus - ctlr->seq);
+	dm_pci_write_config8(dev, PCI_SUBORDINATE_BUS, sub_bus - dev_seq(ctlr));
 
 	if (pci_mem) {
 		/* Round memory allocator to 1MB boundary */
@@ -345,14 +306,9 @@ int dm_pciauto_config_device(struct udevice *dev)
 	struct pci_region *pci_io;
 	unsigned int sub_bus = PCI_BUS(dm_pci_get_bdf(dev));
 	unsigned short class;
-	bool enum_only = false;
 	struct udevice *ctlr = pci_get_controller(dev);
 	struct pci_controller *ctlr_hose = dev_get_uclass_priv(ctlr);
-	int n;
-
-#ifdef CONFIG_PCI_ENUM_ONLY
-	enum_only = true;
-#endif
+	int ret;
 
 	pci_mem = ctlr_hose->pci_mem;
 	pci_prefetch = ctlr_hose->pci_prefetch;
@@ -365,13 +321,12 @@ int dm_pciauto_config_device(struct udevice *dev)
 		debug("PCI Autoconfig: Found P2P bridge, device %d\n",
 		      PCI_DEV(dm_pci_get_bdf(dev)));
 
-		dm_pciauto_setup_device(dev, 2, pci_mem, pci_prefetch, pci_io,
-					enum_only);
+		dm_pciauto_setup_device(dev, 2, pci_mem, pci_prefetch, pci_io);
 
-		n = dm_pci_hose_probe_bus(dev);
-		if (n < 0)
-			return n;
-		sub_bus = (unsigned int)n;
+		ret = dm_pci_hose_probe_bus(dev);
+		if (ret < 0)
+			return log_msg_ret("probe", ret);
+		sub_bus = ret;
 		break;
 
 	case PCI_CLASS_BRIDGE_CARDBUS:
@@ -379,8 +334,7 @@ int dm_pciauto_config_device(struct udevice *dev)
 		 * just do a minimal setup of the bridge,
 		 * let the OS take care of the rest
 		 */
-		dm_pciauto_setup_device(dev, 0, pci_mem, pci_prefetch, pci_io,
-					enum_only);
+		dm_pciauto_setup_device(dev, 0, pci_mem, pci_prefetch, pci_io);
 
 		debug("PCI Autoconfig: Found P2CardBus bridge, device %d\n",
 		      PCI_DEV(dm_pci_get_bdf(dev)));
@@ -404,8 +358,7 @@ int dm_pciauto_config_device(struct udevice *dev)
 		 */
 		debug("PCI Autoconfig: Broken bridge found, only minimal config\n");
 		dm_pciauto_setup_device(dev, 0, hose->pci_mem,
-					hose->pci_prefetch, hose->pci_io,
-					enum_only);
+					hose->pci_prefetch, hose->pci_io);
 		break;
 #endif
 
@@ -414,8 +367,7 @@ int dm_pciauto_config_device(struct udevice *dev)
 		/* fall through */
 
 	default:
-		dm_pciauto_setup_device(dev, 6, pci_mem, pci_prefetch, pci_io,
-					enum_only);
+		dm_pciauto_setup_device(dev, 6, pci_mem, pci_prefetch, pci_io);
 		break;
 	}
 

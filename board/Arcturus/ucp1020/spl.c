@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2013-2022 Arcturus Networks, Inc.
+ * Copyright 2013-2015 Arcturus Networks, Inc.
  *           http://www.arcturusnetworks.com/products/ucp1020/
  * based on board/freescale/p1_p2_rdb_pc/spl.c
  * original copyright follows:
@@ -8,9 +8,11 @@
  */
 
 #include <common.h>
+#include <clock_legacy.h>
 #include <console.h>
 #include <env.h>
 #include <env_internal.h>
+#include <init.h>
 #include <ns16550.h>
 #include <malloc.h>
 #include <mmc.h>
@@ -18,6 +20,7 @@
 #include <i2c.h>
 #include <fsl_esdhc.h>
 #include <spi_flash.h>
+#include <asm/global_data.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -56,7 +59,7 @@ void board_init_f(ulong bootflag)
 	bus_clk = CONFIG_SYS_CLK_FREQ * plat_ratio;
 	gd->bus_clk = bus_clk;
 
-	NS16550_init((NS16550_t)CONFIG_SYS_NS16550_COM1,
+	ns16550_init((struct ns16550 *)CONFIG_SYS_NS16550_COM1,
 		     bus_clk / 16 / CONFIG_BAUDRATE);
 #ifdef CONFIG_SPL_MMC_BOOT
 	puts("\nSD boot...\n");
@@ -75,14 +78,12 @@ void board_init_r(gd_t *gd, ulong dest_addr)
 {
 	/* Pointer is writable since we allocated a register for it */
 	gd = (gd_t *)CONFIG_SPL_GD_ADDR;
-	bd_t *bd;
+	struct bd_info *bd;
 
 	memset(gd, 0, sizeof(gd_t));
-	bd = (bd_t *)(CONFIG_SPL_GD_ADDR + sizeof(gd_t));
-	memset(bd, 0, sizeof(bd_t));
+	bd = (struct bd_info *)(CONFIG_SPL_GD_ADDR + sizeof(gd_t));
+	memset(bd, 0, sizeof(struct bd_info));
 	gd->bd = bd;
-	bd->bi_memstart = CONFIG_SYS_INIT_L2_ADDR;
-	bd->bi_memsize = CONFIG_SYS_L2_SIZE;
 
 	arch_cpu_init();
 	get_clocks();

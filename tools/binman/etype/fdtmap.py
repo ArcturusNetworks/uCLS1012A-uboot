@@ -8,13 +8,9 @@ This handles putting an FDT into the image with just the information about the
 image.
 """
 
-import libfdt
-
-from entry import Entry
-from fdt import Fdt
-import state
-import tools
-import tout
+from binman.entry import Entry
+from patman import tools
+from patman import tout
 
 FDTMAP_MAGIC   = b'_FDTMAP_'
 FDTMAP_HDR_LEN = 16
@@ -80,7 +76,16 @@ class Entry_fdtmap(Entry):
     added as necessary. See the binman README.
     """
     def __init__(self, section, etype, node):
-        Entry.__init__(self, section, etype, node)
+        # Put these here to allow entry-docs and help to work without libfdt
+        global libfdt
+        global state
+        global Fdt
+
+        import libfdt
+        from binman import state
+        from dtoc.fdt import Fdt
+
+        super().__init__(section, etype, node)
 
     def _GetFdtmap(self):
         """Build an FDT map from the entries in the current image

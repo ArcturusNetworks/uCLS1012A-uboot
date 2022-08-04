@@ -8,6 +8,9 @@
 
 #include "ls1012a_common.h"
 
+#undef CONFIG_SYS_BOARD
+#define CONFIG_SYS_BOARD "ls1012afrwy"
+
 /* Board Rev*/
 #define BOARD_REV_A_B			0x0
 #define BOARD_REV_C			0x00080000
@@ -18,15 +21,9 @@
 #define SYS_SDRAM_SIZE_512		0x20000000
 #define SYS_SDRAM_SIZE_1024		0x40000000
 #define CONFIG_CHIP_SELECTS_PER_CTRL	1
-#define CONFIG_CMD_MEMINFO
-#define CONFIG_CMD_MEMTEST
-#define CONFIG_SYS_MEMTEST_START	0x80000000
-#define CONFIG_SYS_MEMTEST_END		0x9fffffff
 
 /* ENV */
 #define CONFIG_SYS_FSL_QSPI_BASE	0x40000000
-#define CONFIG_ENV_ADDR			(CONFIG_SYS_FSL_QSPI_BASE + \
-				CONFIG_ENV_OFFSET)
 
 #ifndef CONFIG_SPL_BUILD
 #undef BOOT_TARGET_DEVICES
@@ -35,15 +32,6 @@
 	func(USB, usb, 0) \
 	func(DHCP, dhcp, na)
 #endif
-
-#undef CONFIG_ENV_OFFSET
-#define CONFIG_ENV_OFFSET              0x1D0000
-#undef FSL_QSPI_FLASH_SIZE
-#define FSL_QSPI_FLASH_SIZE            SZ_16M
-#undef CONFIG_ENV_SECT_SIZE
-#define CONFIG_ENV_SECT_SIZE		0x10000 /*64 KB*/
-#undef CONFIG_ENV_SIZE
-#define CONFIG_ENV_SIZE			0x10000 /*64 KB*/
 
 /*  MMC  */
 #ifdef CONFIG_MMC
@@ -57,9 +45,7 @@
 #undef CONFIG_EXTRA_ENV_SETTINGS
 #define CONFIG_EXTRA_ENV_SETTINGS		\
 	"verify=no\0"				\
-	"fdt_high=0xffffffffffffffff\0"		\
 	"initrd_high=0xffffffffffffffff\0"	\
-	"fdt_addr=0x00f00000\0"			\
 	"kernel_addr=0x01000000\0"		\
 	"kernel_size_sd=0x16000\0"		\
 	"kernelhdr_size_sd=0x10\0"		\
@@ -74,9 +60,11 @@
 	"kernelheader_size=0x40000\0"		\
 	"kernel_addr_r=0x92000000\0"		\
 	"fdt_addr_r=0x90000000\0"		\
+	"fdt_addr=0x90000000\0"                 \
 	"load_addr=0x92000000\0"		\
 	"kernel_size=0x2800000\0"		\
 	"kernelheader_size=0x40000\0"		\
+	"bootm_size=0x10000000\0"		\
 	"console=ttyS0,115200\0"		\
 	"BOARD=ls1012afrwy\0"			\
 	BOOTENV					\
@@ -125,10 +113,6 @@
 #define CONFIG_BOOTCOMMAND "pfe stop; run distro_bootcmd; run sd_bootcmd; "\
 			   "env exists secureboot && esbc_halt;"
 #endif
-#define CONFIG_CMD_MEMINFO
-#define CONFIG_CMD_MEMTEST
-#define CONFIG_SYS_MEMTEST_START	0x80000000
-#define CONFIG_SYS_MEMTEST_END		0x9fffffff
 
 #include <asm/fsl_secure_boot.h>
 

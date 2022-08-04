@@ -5,7 +5,11 @@
  */
 
 #include <common.h>
+#include <clock_legacy.h>
+#include <fdt_support.h>
 #include <i2c.h>
+#include <init.h>
+#include <log.h>
 #include <asm/io.h>
 #include <asm/arch/immap_ls102xa.h>
 #include <asm/arch/clock.h>
@@ -15,9 +19,7 @@
 #include <hwconfig.h>
 #include <mmc.h>
 #include <fsl_csu.h>
-#include <fsl_esdhc.h>
 #include <fsl_ifc.h>
-#include <fsl_sec.h>
 #include <spl.h>
 #include <fsl_devdis.h>
 #include <fsl_validate.h>
@@ -141,7 +143,7 @@ unsigned long get_board_ddr_clk(void)
 int select_i2c_ch_pca9547(u8 ch, int bus_num)
 {
 	int ret;
-#ifdef CONFIG_DM_I2C
+#if CONFIG_IS_ENABLED(DM_I2C)
 	struct udevice *dev;
 
 	ret = i2c_get_chip_for_busnum(bus_num, I2C_MUX_PCA_ADDR_PRI,
@@ -175,19 +177,6 @@ int dram_init(void)
 	select_i2c_ch_pca9547(I2C_MUX_CH_DEFAULT, 0);
 	return fsl_initdram();
 }
-
-#ifdef CONFIG_FSL_ESDHC
-struct fsl_esdhc_cfg esdhc_cfg[1] = {
-	{CONFIG_SYS_FSL_ESDHC_ADDR},
-};
-
-int board_mmc_init(bd_t *bis)
-{
-	esdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
-
-	return fsl_esdhc_initialize(bis, &esdhc_cfg[0]);
-}
-#endif
 
 int board_early_init_f(void)
 {
@@ -419,9 +408,6 @@ int misc_init_r(void)
 #ifdef CONFIG_FSL_DEVICE_DISABLE
 	device_disable(devdis_tbl, ARRAY_SIZE(devdis_tbl));
 #endif
-#ifdef CONFIG_FSL_CAAM
-	return sec_init();
-#endif
 	return 0;
 }
 
@@ -459,7 +445,7 @@ void board_sleep_prepare(void)
 }
 #endif
 
-int ft_board_setup(void *blob, bd_t *bd)
+int ft_board_setup(void *blob, struct bd_info *bd)
 {
 	ft_cpu_setup(blob, bd);
 

@@ -16,6 +16,7 @@
 #include <config.h>
 
 #include <dm/device.h>
+#include <linux/bitops.h>
 #include <linux/compat.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/flashchip.h>
@@ -54,7 +55,7 @@ void nand_wait_ready(struct mtd_info *mtd);
  * is supported now. If you add a chip with bigger oobsize/page
  * adjust this accordingly.
  */
-#define NAND_MAX_OOBSIZE       1664
+#define NAND_MAX_OOBSIZE       1872
 #define NAND_MAX_PAGESIZE      16384
 
 /*

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0+ OR X11
 /*
- * NXP ls1028AQDS device tree fragment for RCW 6xxx
+ * NXP LS1028A-QDS device tree fragment for RCW 6xxx
  *
- * Copyright 2019 NXP
- *
+ * Copyright 2019-2021 NXP Semiconductors
  */
 
 /*
- * This set-up is using SCH-30842 cards with AQR112 PHY.
+ * This setup is using SCH-30842 cards with AQR112 PHY.
  */
-
 &slot1 {
 	#include "fsl-sch-30842.dtsi"
 };

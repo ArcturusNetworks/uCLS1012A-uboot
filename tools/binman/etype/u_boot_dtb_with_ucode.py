@@ -5,10 +5,9 @@
 # Entry-type module for U-Boot device tree with the microcode removed
 #
 
-from entry import Entry
-from blob_dtb import Entry_blob_dtb
-import state
-import tools
+from binman.entry import Entry
+from binman.etype.blob_dtb import Entry_blob_dtb
+from patman import tools
 
 class Entry_u_boot_dtb_with_ucode(Entry_blob_dtb):
     """A U-Boot device tree file, with the microcode removed
@@ -25,7 +24,11 @@ class Entry_u_boot_dtb_with_ucode(Entry_blob_dtb):
     it available to u_boot_ucode.
     """
     def __init__(self, section, etype, node):
-        Entry_blob_dtb.__init__(self, section, etype, node)
+        # Put this here to allow entry-docs and help to work without libfdt
+        global state
+        from binman import state
+
+        super().__init__(section, etype, node)
         self.ucode_data = b''
         self.collate = False
         self.ucode_offset = None
@@ -41,7 +44,7 @@ class Entry_u_boot_dtb_with_ucode(Entry_blob_dtb):
 
     def ProcessFdt(self, fdt):
         # So the module can be loaded without it
-        import fdt
+        from dtoc import fdt
 
         # If the section does not need microcode, there is nothing to do
         ucode_dest_entry = self.section.FindEntryType(
@@ -75,7 +78,7 @@ class Entry_u_boot_dtb_with_ucode(Entry_blob_dtb):
 
     def ObtainContents(self):
         # Call the base class just in case it does something important.
-        Entry_blob_dtb.ObtainContents(self)
+        super().ObtainContents()
         if self.ucode and not self.collate:
             for node in self.ucode.subnodes:
                 data_prop = node.props.get('data')

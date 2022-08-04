@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2013-2022 Arcturus Networks, Inc.
+ * Copyright 2013-2015 Arcturus Networks, Inc.
  *           http://www.arcturusnetworks.com/products/ucp1020/
  * based on board/freescale/p1_p2_rdb_pc/spl_minimal.c
  * original copyright follows:
@@ -8,6 +8,7 @@
  */
 
 #include <common.h>
+#include <init.h>
 #include <ns16550.h>
 #include <asm/io.h>
 #include <nand.h>
@@ -33,7 +34,7 @@ void board_init_f(ulong bootflag)
 	plat_ratio >>= 1;
 	gd->bus_clk = CONFIG_SYS_CLK_FREQ * plat_ratio;
 
-	NS16550_init((NS16550_t)CONFIG_SYS_NS16550_COM1,
+	ns16550_init((struct ns16550 *)CONFIG_SYS_NS16550_COM1,
 		     gd->bus_clk / 16 / CONFIG_BAUDRATE);
 
 	puts("\nNAND boot... ");
@@ -54,9 +55,9 @@ void board_init_r(gd_t *gd, ulong dest_addr)
 void putc(char c)
 {
 	if (c == '\n')
-		NS16550_putc((NS16550_t)CONFIG_SYS_NS16550_COM1, '\r');
+		ns16550_putc((struct ns16550 *)CONFIG_SYS_NS16550_COM1, '\r');
 
-	NS16550_putc((NS16550_t)CONFIG_SYS_NS16550_COM1, c);
+	ns16550_putc((struct ns16550 *)CONFIG_SYS_NS16550_COM1, c);
 }
 
 void puts(const char *str)

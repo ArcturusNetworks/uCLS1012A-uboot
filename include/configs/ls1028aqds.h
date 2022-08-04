@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright 2019 NXP
+ * Copyright 2019-2021 NXP
  */
 
 #ifndef __LS1028A_QDS_H
@@ -59,7 +59,6 @@
 #define I2C_MUX_CH_RTC                 0xB
 
 /* Store environment at top of flash */
-#define CONFIG_ENV_SIZE			0x2000
 
 #ifdef CONFIG_SPL_BUILD
 #define CONFIG_SYS_MONITOR_BASE CONFIG_SPL_TEXT_BASE
@@ -78,19 +77,10 @@
 #define CONFIG_SCSI_AHCI_PLAT
 
 #define CONFIG_SYS_SATA1			AHCI_BASE_ADDR1
-#ifndef CONFIG_CMD_EXT2
-#define CONFIG_CMD_EXT2
-#endif
 #define CONFIG_SYS_SCSI_MAX_SCSI_ID		1
 #define CONFIG_SYS_SCSI_MAX_LUN			1
 #define CONFIG_SYS_SCSI_MAX_DEVICE		(CONFIG_SYS_SCSI_MAX_SCSI_ID * \
 						CONFIG_SYS_SCSI_MAX_LUN)
-/* DSPI */
-#ifdef CONFIG_FSL_DSPI
-#define CONFIG_SPI_FLASH_SST
-#define CONFIG_SPI_FLASH_EON
-#endif
-
 #ifndef SPL_NO_ENV
 #undef CONFIG_EXTRA_ENV_SETTINGS
 #define CONFIG_EXTRA_ENV_SETTINGS \
@@ -98,9 +88,6 @@
 	"hwconfig=fsl_ddr:bank_intlv=auto\0" \
 	"ramdisk_addr=0x800000\0" \
 	"ramdisk_size=0x2000000\0" \
-	"fdt_high=0xffffffffffffffff\0" \
-	"initrd_high=0xffffffffffffffff\0" \
-	"fdt_addr=0x00f00000\0" \
 	"kernel_addr=0x01000000\0" \
 	"scriptaddr=0x80000000\0" \
 	"scripthdraddr=0x80080000\0" \
@@ -109,16 +96,17 @@
 	"load_addr=0xa0000000\0" \
 	"kernel_addr_r=0x81000000\0" \
 	"fdt_addr_r=0x90000000\0" \
+	"fdt_addr=0x90000000\0" \
 	"fdt2_addr_r=0x90010000\0" \
 	"ramdisk_addr_r=0xa0000000\0" \
 	"kernel_start=0x1000000\0" \
-	"kernelheader_start=0x800000\0" \
+	"kernelheader_start=0x600000\0" \
 	"kernel_load=0xa0000000\0" \
 	"kernel_size=0x2800000\0" \
 	"kernelheader_size=0x40000\0" \
 	"kernel_addr_sd=0x8000\0" \
 	"kernel_size_sd=0x14000\0" \
-	"kernelhdr_addr_sd=0x4000\0" \
+	"kernelhdr_addr_sd=0x3000\0" \
 	"kernelhdr_size_sd=0x10\0" \
 	"console=ttyS0,115200\0" \
 	"mtdparts=" CONFIG_MTDPARTS_DEFAULT "\0" \
@@ -135,13 +123,6 @@
 			"run scan_dev_for_boot; " \
 		  "fi; " \
 		"done\0" \
-	"scan_dev_for_boot=" \
-		"echo Scanning ${devtype} " \
-				"${devnum}:${distro_bootpart}...; " \
-		"for prefix in ${boot_prefixes}; do " \
-			"run scan_dev_for_scripts; " \
-		"done;" \
-		"\0" \
 	"boot_a_script=" \
 		"load ${devtype} ${devnum}:${distro_bootpart} " \
 			"${scriptaddr} ${prefix}${script}; " \

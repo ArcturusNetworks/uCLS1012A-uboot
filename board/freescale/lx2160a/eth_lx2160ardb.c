@@ -1,38 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018 NXP
+ * Copyright 2018-2021 NXP
  *
  */
 
 #include <common.h>
 #include <command.h>
+#include <fdt_support.h>
+#include <net.h>
 #include <netdev.h>
 #include <malloc.h>
 #include <fsl_mdio.h>
 #include <miiphy.h>
 #include <phy.h>
 #include <fm_eth.h>
+#include <asm/global_data.h>
 #include <asm/io.h>
 #include <exports.h>
 #include <asm/arch/fsl_serdes.h>
 #include <fsl-mc/fsl_mc.h>
 #include <fsl-mc/ldpaa_wriop.h>
-#include "../common/qsfp_eeprom.h"
+#include "lx2160a.h"
 
 DECLARE_GLOBAL_DATA_PTR;
-
-#if defined(CONFIG_QSFP_EEPROM) && defined(CONFIG_PHY_CORTINA)
-#define CS4223_CONFIG_ENV	"cs4223_autoconfig"
-#define CS4223_CONFIG_CR4	"copper"
-#define CS4223_CONFIG_SR4	"optical"
-
-enum qsfp_compat_codes {
-	QSFP_COMPAT_XLPPI = 0x01,
-	QSFP_COMPAT_LR4	= 0x02,
-	QSFP_COMPAT_SR4	= 0x04,
-	QSFP_COMPAT_CR4	= 0x08,
-};
-#endif /* CONFIG_QSFP_EEPROM && CONFIG_PHY_CORTINA */
 
 static bool get_inphi_phy_id(struct mii_dev *bus, int addr, int devad)
 {
@@ -51,7 +41,50 @@ static bool get_inphi_phy_id(struct mii_dev *bus, int addr, int devad)
 		return false;
 }
 
-int board_eth_init(bd_t *bis)
+int setup_eth_rev_c(u32 srds_p)
+{
+	struct mii_dev *bus;
+	int i;
+
+	/* difference between SerDes1 protocols 18/19 is 4x10G vs. 40G */
+	switch (srds_p) {
+	case 19:
+		wriop_init_dpmac_enet_if(WRIOP1_DPMAC2,
+					 PHY_INTERFACE_MODE_XLAUI);
+		break;
+	case 18:
+		for (i = WRIOP1_DPMAC7; i <= WRIOP1_DPMAC10; i++)
+			wriop_init_dpmac_enet_if(i, PHY_INTERFACE_MODE_XFI);
+		break;
+	default:
+		printf("SerDes1 protocol 0x%x is not supported on LX2160ARDB\n",
+		       srds_p);
+		return -1;
+	}
+
+	/* common interfaces for SerDes1 protocols 18 and 19 initialization */
+	wriop_set_phy_address(WRIOP1_DPMAC3, 0, AQR113C_PHY_ADDR1);
+	wriop_set_phy_address(WRIOP1_DPMAC4, 0, AQR113C_PHY_ADDR2);
+	wriop_set_phy_address(WRIOP1_DPMAC5, 0, INPHI_PHY_ADDR1);
+	wriop_set_phy_address(WRIOP1_DPMAC6, 0, INPHI_PHY_ADDR1);
+	wriop_set_phy_address(WRIOP1_DPMAC17, 0, RGMII_PHY_ADDR1);
+	wriop_set_phy_address(WRIOP1_DPMAC18, 0, RGMII_PHY_ADDR2);
+
+	/* assign DPMAC/PHY to MDIO bus */
+	bus = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO1_NAME);
+	wriop_set_mdio(WRIOP1_DPMAC3, bus);
+	wriop_set_mdio(WRIOP1_DPMAC4, bus);
+	wriop_set_mdio(WRIOP1_DPMAC17, bus);
+	wriop_set_mdio(WRIOP1_DPMAC18, bus);
+
+	bus = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO2_NAME);
+	wriop_set_mdio(WRIOP1_DPMAC5, bus);
+	wriop_set_mdio(WRIOP1_DPMAC6, bus);
+
+	return 0;
+}
+
+int board_eth_init(struct bd_info *bis)
 {
 #if defined(CONFIG_FSL_MC_ENET)
 	struct memac_mdio_info mdio_info;
@@ -60,9 +93,6 @@ int board_eth_init(bd_t *bis)
 	struct mii_dev *dev;
 	struct ccsr_gur *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
 	u32 srds_s1;
-#if defined(CONFIG_QSFP_EEPROM) && defined(CONFIG_PHY_CORTINA)
-	u8 qsfp_compat_code;
-#endif
 
 	srds_s1 = in_le32(&gur->rcwsr[28]) &
 				FSL_CHASSIS3_RCWSR28_SRDS1_PRTCL_MASK;
@@ -83,6 +113,13 @@ int board_eth_init(bd_t *bis)
 	fm_memac_mdio_init(bis, &mdio_info);
 
 	dev = miiphy_get_dev_by_name(DEFAULT_WRIOP_MDIO2_NAME);
+
+	/* new LX2160A-RDB2 revC board uses phy-less 25G/40G interfaces */
+	if (get_board_rev() == 'C') {
+		setup_eth_rev_c(srds_s1);
+		goto next;
+	}
+
 	switch (srds_s1) {
 	case 19:
 		wriop_set_phy_address(WRIOP1_DPMAC2, 0,
@@ -167,26 +204,6 @@ int board_eth_init(bd_t *bis)
 	}
 
 next:
-#if defined(CONFIG_QSFP_EEPROM) && defined(CONFIG_PHY_CORTINA)
-	/* read qsfp+ eeprom & update environment for cs4223 init */
-	select_i2c_ch_pca9547(I2C_MUX_CH_SEC);
-	select_i2c_ch_pca9547_sec(I2C_MUX_CH_QSFP);
-	qsfp_compat_code = get_qsfp_compat0();
-	switch (qsfp_compat_code) {
-	case QSFP_COMPAT_CR4:
-		env_set(CS4223_CONFIG_ENV, CS4223_CONFIG_CR4);
-		break;
-	case QSFP_COMPAT_XLPPI:
-	case QSFP_COMPAT_SR4:
-		env_set(CS4223_CONFIG_ENV, CS4223_CONFIG_SR4);
-		break;
-	default:
-		/* do nothing if detection fails or not supported*/
-		break;
-	}
-	select_i2c_ch_pca9547(I2C_MUX_CH_DEFAULT);
-#endif /* CONFIG_QSFP_EEPROM & CONFIG_PHY_CORTINA */
-
 	cpu_eth_init(bis);
 #endif /* CONFIG_FSL_MC_ENET */
 
@@ -213,6 +230,112 @@ void reset_phy(void)
 #endif
 }
 #endif /* CONFIG_RESET_PHY_R */
+
+static int fdt_get_dpmac_node(void *fdt, int dpmac_id)
+{
+	char dpmac_str[] = "dpmacs@00";
+	int offset, dpmacs_offset;
+
+	/* get the dpmac offset */
+	dpmacs_offset = fdt_path_offset(fdt, "/soc/fsl-mc/dpmacs");
+	if (dpmacs_offset < 0)
+		dpmacs_offset = fdt_path_offset(fdt, "/fsl-mc/dpmacs");
+
+	if (dpmacs_offset < 0) {
+		printf("dpmacs node not found in device tree\n");
+		return dpmacs_offset;
+	}
+
+	sprintf(dpmac_str, "dpmac@%x", dpmac_id);
+	offset = fdt_subnode_offset(fdt, dpmacs_offset, dpmac_str);
+	if (offset < 0) {
+		sprintf(dpmac_str, "ethernet@%x", dpmac_id);
+		offset = fdt_subnode_offset(fdt, dpmacs_offset, dpmac_str);
+		if (offset < 0) {
+			printf("dpmac@%x/ethernet@%x node not found in device tree\n",
+			       dpmac_id, dpmac_id);
+			return offset;
+		}
+	}
+
+	return offset;
+}
+
+static int fdt_update_phy_addr(void *fdt, int dpmac_id, int phy_addr)
+{
+	char dpmac_str[] = "dpmacs@00";
+	const u32 *phyhandle;
+	int offset;
+	int err;
+
+	/* get the dpmac offset */
+	offset = fdt_get_dpmac_node(fdt, dpmac_id);
+	if (offset < 0)
+		return offset;
+
+	/* get dpmac phy-handle */
+	sprintf(dpmac_str, "dpmac@%x", dpmac_id);
+	phyhandle = (u32 *)fdt_getprop(fdt, offset, "phy-handle", NULL);
+	if (!phyhandle) {
+		printf("%s node not found in device tree\n", dpmac_str);
+		return offset;
+	}
+
+	offset = fdt_node_offset_by_phandle(fdt, fdt32_to_cpu(*phyhandle));
+	if (offset < 0) {
+		printf("Could not get the ph node offset for dpmac %d\n",
+		       dpmac_id);
+		return offset;
+	}
+
+	phy_addr = cpu_to_fdt32(phy_addr);
+	err = fdt_setprop(fdt, offset, "reg", &phy_addr, sizeof(phy_addr));
+	if (err < 0) {
+		printf("Could not set phy node's reg for dpmac %d: %s.\n",
+		       dpmac_id, fdt_strerror(err));
+		return err;
+	}
+
+	return 0;
+}
+
+static int fdt_delete_phy_handle(void *fdt, int dpmac_id)
+{
+	const u32 *phyhandle;
+	int offset;
+
+	/* get the dpmac offset */
+	offset = fdt_get_dpmac_node(fdt, dpmac_id);
+	if (offset < 0)
+		return offset;
+
+	/* verify if the node has a phy-handle */
+	phyhandle = (u32 *)fdt_getprop(fdt, offset, "phy-handle", NULL);
+	if (!phyhandle)
+		return 0;
+
+	return fdt_delprop(fdt, offset, "phy-handle");
+}
+
+int fdt_fixup_board_phy_revc(void *fdt)
+{
+	int ret;
+
+	if (get_board_rev() != 'C')
+		return 0;
+
+	/* DPMACs 3,4 have their Aquantia PHYs at new addresses */
+	ret = fdt_update_phy_addr(fdt, 3, AQR113C_PHY_ADDR1);
+	if (ret)
+		return ret;
+
+	ret = fdt_update_phy_addr(fdt, 4, AQR113C_PHY_ADDR2);
+	if (ret)
+		return ret;
+
+	/* There is no PHY for the DPMAC2, so remove the phy-handle */
+	return fdt_delete_phy_handle(fdt, 2);
+}
 
 int fdt_fixup_board_phy(void *fdt)
 {
@@ -243,5 +366,5 @@ int fdt_fixup_board_phy(void *fdt)
 		}
 	}
 
-	return ret;
+	return fdt_fixup_board_phy_revc(fdt);
 }

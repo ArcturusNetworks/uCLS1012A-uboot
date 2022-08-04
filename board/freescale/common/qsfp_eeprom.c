@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2019 NXP
+ * Copyright 2019-2021 NXP
  */
 #include <common.h>
 #include <command.h>
@@ -82,7 +82,7 @@ unsigned char get_qsfp_compat0(void)
 	snprintf(mfgdt, sizeof(mfgdt), "%.2s/%.2s/%.2s",
 		 &qsfp.page0.date[0], &qsfp.page0.date[2], &qsfp.page0.date[4]);
 
-	printf("\nQSFP: detected %s %s s/n: %s mfgdt: %s",
+	printf("QSFP: detected %s %s s/n: %s mfgdt: %s\n",
 	       strim(vendor), strim(pname), strim(serial), strim(mfgdt));
 
 	/* return ethernet compatibility code*/

@@ -2,8 +2,7 @@
 /*
  * Device tree fragment for RCW SCH-30841 card
  *
- * Copyright 2019 NXP
- *
+ * Copyright 2019-2021 NXP Semiconductors
  */
 
 /*
@@ -14,22 +13,24 @@
  * PHY addresses are 0x00 - 0x03.
  * On the card the first port is the bottom port (closest to PEX connector).
  */
-
 phy@00 {
 	reg = <0x00>;
 	mdi-reversal = <1>;
 	smb-addr = <0x25>;
 };
+
 phy@01 {
 	reg = <0x01>;
 	mdi-reversal = <1>;
 	smb-addr = <0x26>;
 };
+
 phy@02 {
 	reg = <0x02>;
 	mdi-reversal = <1>;
 	smb-addr = <0x27>;
 };
+
 phy@03 {
 	reg = <0x03>;
 	mdi-reversal = <1>;

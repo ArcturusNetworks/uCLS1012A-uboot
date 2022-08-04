@@ -35,7 +35,7 @@ obj-$(CONFIG_CMD_BOOTM) += bootm.o
 obj-$(CONFIG_CMD_BOOTZ) += bootm.o zimage.o
 obj-$(CONFIG_SYS_L2_PL310) += cache-pl310.o
 else
-obj-$(CONFIG_SPL_FRAMEWORK) += spl.o
+obj-$(CONFIG_$(SPL_TPL_)FRAMEWORK) += spl.o
 obj-$(CONFIG_SPL_FRAMEWORK) += zimage.o
 obj-$(CONFIG_OF_LIBFDT) += bootm-fdt.o
 endif
@@ -43,6 +43,7 @@ obj-$(CONFIG_$(SPL_TPL_)USE_ARCH_MEMSET) += memset.o
 obj-$(CONFIG_$(SPL_TPL_)USE_ARCH_MEMCPY) += memcpy.o
 obj-$(CONFIG_SEMIHOSTING) += semihosting.o
 
+obj-y	+= bdinfo.o
 obj-y	+= sections.o
 obj-y	+= stack.o
 ifdef CONFIG_CPU_V7M
@@ -57,7 +58,7 @@ obj-y	+= interrupts_64.o
 else
 obj-y	+= interrupts.o
 endif
-ifndef CONFIG_SYSRESET
+ifndef CONFIG_$(SPL_TPL_)SYSRESET
 obj-y	+= reset.o
 endif
 

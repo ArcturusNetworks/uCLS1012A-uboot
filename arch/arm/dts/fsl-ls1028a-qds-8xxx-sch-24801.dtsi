@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0+ OR X11
 /*
- * NXP ls1028AQDS device tree fragment for RCW 8xxx
+ * NXP LS1028A-QDS device tree fragment for RCW 8xxx
  *
- * Copyright 2019 NXP
- *
+ * Copyright 2019-2021 NXP Semiconductors
  */
 
 /*
- * This set-up is using SCH-24801 cards with VSC8234 quad SGMII PHY in slot 1.
+ * This setup is using SCH-24801 cards with VSC8234 quad SGMII PHY in slot 1.
  */
-
 &slot1 {
 	#include "fsl-sch-24801.dtsi"
 };

@@ -17,23 +17,20 @@
 #include <command.h>
 #include <env.h>
 #include <env_internal.h>
+#include <asm/global_data.h>
 #include <linux/stddef.h>
 #include <malloc.h>
 #include <memalign.h>
 #include <nand.h>
 #include <search.h>
 #include <errno.h>
+#include <u-boot/crc.h>
 
 #if defined(CONFIG_CMD_SAVEENV) && defined(CONFIG_CMD_NAND) && \
 		!defined(CONFIG_SPL_BUILD)
 #define CMD_SAVEENV
 #elif defined(CONFIG_ENV_OFFSET_REDUND) && !defined(CONFIG_SPL_BUILD)
 #error CONFIG_ENV_OFFSET_REDUND must have CONFIG_CMD_SAVEENV & CONFIG_CMD_NAND
-#endif
-
-#if defined(CONFIG_ENV_SIZE_REDUND) &&	\
-	(CONFIG_ENV_SIZE_REDUND != CONFIG_ENV_SIZE)
-#error CONFIG_ENV_SIZE_REDUND should be the same as CONFIG_ENV_SIZE
 #endif
 
 #ifndef CONFIG_ENV_RANGE
@@ -157,7 +154,7 @@ static int writeenv(size_t offset, u_char *buf)
 
 struct nand_env_location {
 	const char *name;
-	const nand_erase_options_t erase_opts;
+	nand_erase_options_t erase_opts;
 };
 
 static int erase_and_write_env(const struct nand_env_location *location,
@@ -186,25 +183,17 @@ static int env_nand_save(void)
 	int	ret = 0;
 	ALLOC_CACHE_ALIGN_BUFFER(env_t, env_new, 1);
 	int	env_idx = 0;
-	static const struct nand_env_location location[] = {
-		{
-			.name = "NAND",
-			.erase_opts = {
-				.length = CONFIG_ENV_RANGE,
-				.offset = CONFIG_ENV_OFFSET,
-			},
-		},
-#ifdef CONFIG_ENV_OFFSET_REDUND
-		{
-			.name = "redundant NAND",
-			.erase_opts = {
-				.length = CONFIG_ENV_RANGE,
-				.offset = CONFIG_ENV_OFFSET_REDUND,
-			},
-		},
-#endif
-	};
+	static struct nand_env_location location[2] = {0};
 
+	location[0].name = "NAND";
+	location[0].erase_opts.length = CONFIG_ENV_RANGE;
+	location[0].erase_opts.offset = env_get_offset(CONFIG_ENV_OFFSET);
+
+#ifdef CONFIG_ENV_OFFSET_REDUND
+	location[1].name = "redundant NAND";
+	location[1].erase_opts.length = CONFIG_ENV_RANGE;
+	location[1].erase_opts.offset = CONFIG_ENV_OFFSET_REDUND;
+#endif
 
 	if (CONFIG_ENV_RANGE < CONFIG_ENV_SIZE)
 		return 1;
@@ -331,11 +320,11 @@ static int env_nand_load(void)
 		goto done;
 	}
 
-	read1_fail = readenv(CONFIG_ENV_OFFSET, (u_char *) tmp_env1);
+	read1_fail = readenv(env_get_offset(CONFIG_ENV_OFFSET), (u_char *) tmp_env1);
 	read2_fail = readenv(CONFIG_ENV_OFFSET_REDUND, (u_char *) tmp_env2);
 
 	ret = env_import_redund((char *)tmp_env1, read1_fail, (char *)tmp_env2,
-				read2_fail);
+				read2_fail, H_EXTERNAL);
 
 done:
 	free(tmp_env1);
@@ -370,13 +359,13 @@ static int env_nand_load(void)
 	}
 #endif
 
-	ret = readenv(CONFIG_ENV_OFFSET, (u_char *)buf);
+	ret = readenv(env_get_offset(CONFIG_ENV_OFFSET), (u_char *)buf);
 	if (ret) {
 		env_set_default("readenv() failed", 0);
 		return -EIO;
 	}
 
-	return env_import(buf, 1);
+	return env_import(buf, 1, H_EXTERNAL);
 #endif /* ! ENV_IS_EMBEDDED */
 
 	return 0;

@@ -5,7 +5,13 @@
  */
 
 #include <common.h>
+#include <clock_legacy.h>
+#include <command.h>
+#include <fdt_support.h>
 #include <i2c.h>
+#include <init.h>
+#include <net.h>
+#include <asm/global_data.h>
 #include <asm/io.h>
 #include <asm/arch/immap_ls102xa.h>
 #include <asm/arch/clock.h>
@@ -15,15 +21,14 @@
 #include <hwconfig.h>
 #include <mmc.h>
 #include <fsl_csu.h>
-#include <fsl_esdhc.h>
 #include <fsl_ifc.h>
 #include <fsl_immap.h>
 #include <netdev.h>
 #include <fsl_mdio.h>
 #include <tsec.h>
-#include <fsl_sec.h>
 #include <fsl_devdis.h>
 #include <spl.h>
+#include <linux/delay.h>
 #include "../common/sleep.h"
 #ifdef CONFIG_U_QE
 #include <fsl_qe.h>
@@ -234,20 +239,7 @@ int dram_init(void)
 	return 0;
 }
 
-#ifdef CONFIG_FSL_ESDHC
-struct fsl_esdhc_cfg esdhc_cfg[1] = {
-	{CONFIG_SYS_FSL_ESDHC_ADDR},
-};
-
-int board_mmc_init(bd_t *bis)
-{
-	esdhc_cfg[0].sdhc_clk = mxc_get_clock(MXC_ESDHC_CLK);
-
-	return fsl_esdhc_initialize(bis, &esdhc_cfg[0]);
-}
-#endif
-
-int board_eth_init(bd_t *bis)
+int board_eth_init(struct bd_info *bis)
 {
 	return pci_eth_init(bis);
 }
@@ -465,7 +457,7 @@ void ls1twr_program_regulator(void)
 #define MC34VR500_ADDR			0x8
 #define MC34VR500_DEVICEID		0x4
 #define MC34VR500_DEVICEID_MASK		0x0f
-#ifdef CONFIG_DM_I2C
+#if CONFIG_IS_ENABLED(DM_I2C)
 	struct udevice *dev;
 	int ret;
 
@@ -562,10 +554,7 @@ int misc_init_r(void)
 #if !defined(CONFIG_QSPI_BOOT) && !defined(CONFIG_SD_BOOT_QSPI)
 	config_board_mux();
 #endif
-
-#ifdef CONFIG_FSL_CAAM
-	return sec_init();
-#endif
+	return 0;
 }
 #endif
 
@@ -578,7 +567,7 @@ void board_sleep_prepare(void)
 }
 #endif
 
-int ft_board_setup(void *blob, bd_t *bd)
+int ft_board_setup(void *blob, struct bd_info *bd)
 {
 	ft_cpu_setup(blob, bd);
 
@@ -622,8 +611,8 @@ static void convert_flash_bank(char bank)
 	cpld_data->system_rst = CONFIG_RESET;
 }
 
-static int flash_bank_cmd(cmd_tbl_t *cmdtp, int flag, int argc,
-			  char * const argv[])
+static int flash_bank_cmd(struct cmd_tbl *cmdtp, int flag, int argc,
+			  char *const argv[])
 {
 	if (argc != 2)
 		return CMD_RET_USAGE;
@@ -643,8 +632,8 @@ U_BOOT_CMD(
 	"bank[0-upper bank/1-lower bank] (e.g. boot_bank 0)"
 );
 
-static int cpld_reset_cmd(cmd_tbl_t *cmdtp, int flag, int argc,
-			  char * const argv[])
+static int cpld_reset_cmd(struct cmd_tbl *cmdtp, int flag, int argc,
+			  char *const argv[])
 {
 	struct cpld_data *cpld_data = (void *)(CONFIG_SYS_CPLD_BASE);
 
@@ -702,8 +691,8 @@ static void print_serdes_mux(void)
 		printf("B.\n");
 }
 
-static int serdes_mux_cmd(cmd_tbl_t *cmdtp, int flag, int argc,
-			  char * const argv[])
+static int serdes_mux_cmd(struct cmd_tbl *cmdtp, int flag, int argc,
+			  char *const argv[])
 {
 	if (argc != 2)
 		return CMD_RET_USAGE;

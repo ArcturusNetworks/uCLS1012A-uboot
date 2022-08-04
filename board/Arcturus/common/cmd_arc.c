@@ -13,6 +13,7 @@
 #include <spi_flash.h>
 #include <version.h>
 #include <env.h>
+#include <command.h>
 
 #include <asm/io.h>
 
@@ -34,9 +35,8 @@
 
 static struct spi_flash *flash;
 static char smac[4][18];
-
-#define MODULE_REV_ADDR 40
-char module_rev[4];
+extern char module_rev[4];
+const char prefix[8] = "00:06:3";
 
 static int ishwaddr(char *hwaddr)
 {
@@ -48,19 +48,6 @@ static int ishwaddr(char *hwaddr)
 		    hwaddr[14] == ':')
 			return 0;
 	return -1;
-}
-
-void read_board_rev(void)
-{
-	flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
-				CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
-	if (flash)
-		if (!spi_flash_read(flash, MODULE_REV_ADDR, 4, module_rev))
-			if (module_rev[0] == 'R')
-				return;
-	strcpy(module_rev, (char *)"R14");
-
-	return;
 }
 
 int set_arc_product(int argc, char *const argv[])
@@ -129,6 +116,7 @@ int set_arc_product(int argc, char *const argv[])
 static int read_arc_info(void)
 {
 	int ret = 0;
+
 	flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
 				CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
 	if (!flash) {
@@ -169,6 +157,126 @@ static int read_arc_info(void)
 	}
 #endif
 	return ret;
+}
+
+int ressurect_arc_info(void)
+{
+	char *tmpv;
+#ifdef CONFIG_ETHADDR2SERIAL
+	char key[4];
+#endif
+	char *mystrerr = "ERROR: Failed to save factory info in spi location";
+	int err = read_arc_info();
+	int found = 0;
+
+	if (err == 0) {
+		printf("%s: failed to read factory info\n", __func__);
+		return -1;
+	}
+
+	if (smac[1][0] == 0xFF) {
+		tmpv = env_get("ethaddr");
+		if ((tmpv != NULL) && (strcmp(tmpv, __stringify(CONFIG_ETHADDR)) != 0)) {
+			if (tmpv[0] == prefix[0] && tmpv[1] == prefix[1] &&
+			    tmpv[2] == prefix[2] && tmpv[3] == prefix[3] &&
+			    tmpv[4] == prefix[4] && tmpv[5] == prefix[5] &&
+			    tmpv[6] == prefix[6] &&
+			    (tmpv[7] == 'b' || tmpv[7] == 'B')) {
+#ifdef CONFIG_ETHADDR2SERIAL
+				key[0] = tmpv[13];
+				key[1] = tmpv[15];
+				key[2] = tmpv[16];
+				key[3] = 0;
+#endif
+				strcpy(smac[1], tmpv);
+				found = 1;
+			}
+		}
+	}
+
+	if (!found) {
+		return -2;
+	}
+
+	if (smac[2][0] == 0xFF) {
+		tmpv = env_get("eth1addr");
+		if ((tmpv != NULL) && (strcmp(tmpv, __stringify(CONFIG_ETH1ADDR)) != 0)) {
+			if (tmpv[0] == prefix[0] && tmpv[1] == prefix[1] &&
+			    tmpv[2] == prefix[2] && tmpv[3] == prefix[3] &&
+			    tmpv[4] == prefix[4] && tmpv[5] == prefix[5] &&
+			    tmpv[6] == prefix[6] &&
+			    (tmpv[7] == 'b' || tmpv[7] == 'B')) {
+				strcpy(smac[2], tmpv);
+			}
+		} else {
+			strcpy(smac[2], "00:00:00:00:00:00");
+		}
+	}
+	if (smac[3][0] == 0xFF) {
+		tmpv = env_get("ath2addr");
+		if ((tmpv != NULL) && (strcmp(tmpv, __stringify(CONFIG_ETH2ADDR)) != 0)) {
+			if (tmpv[0] == prefix[0] && tmpv[1] == prefix[1] &&
+			    tmpv[2] == prefix[2] && tmpv[3] == prefix[3] &&
+			    tmpv[4] == prefix[4] && tmpv[5] == prefix[5] &&
+			    tmpv[6] == prefix[6] &&
+			    (tmpv[7] == 'b' || tmpv[7] == 'B')) {
+				strcpy(smac[3], tmpv);
+			}
+		} else {
+			strcpy(smac[3], "00:00:00:00:00:00");
+		}
+	}
+
+	if (smac[0][0] == 0xFF) {
+		tmpv = env_get("SERIAL");
+		if (tmpv != NULL) {
+#ifdef CONFIG_ETHADDR2SERIAL
+			if (key[0] == tmpv[12] && key[1] == tmpv[13] && key[2] == tmpv[14]) {
+				strncpy(smac[0], tmpv, 15);
+				smac[0][15] = 0;
+			}
+#else
+			strncpy(smac[0], tmpv, 15);
+			smac[0][15] = 0;
+#endif
+		}
+	}
+
+	/* Ressurect factory defaults */
+#ifdef CONFIG_FIRM_ADDR1
+	if (spi_flash_write(flash, CONFIG_FIRM_ADDR1, sizeof(smac), smac)) {
+		printf("%s: %s [1]\n", __func__, mystrerr);
+	} else {
+		err = 0;
+	}
+#endif
+#ifdef CONFIG_FIRM_ADDR2
+	if (spi_flash_write(flash, CONFIG_FIRM_ADDR2, sizeof(smac), smac)) {
+		printf("%s: %s [2]\n", __func__, mystrerr);
+	} else  {
+		err = 0;
+	}
+#endif
+#ifdef CONFIG_FIRM_ADDR3
+	if (spi_flash_write(flash, CONFIG_FIRM_ADDR3, sizeof(smac), smac)) {
+		printf("%s: %s [3]\n", __func__, mystrerr);
+	} else {
+		err = 0;
+	}
+#endif
+#ifdef CONFIG_FIRM_ADDR4
+	if (spi_flash_write(flash, CONFIG_FIRM_ADDR4, sizeof(smac), smac)) {
+		printf("%s: %s [4]\n", __func__, mystrerr);
+	} else {
+		err = 0;
+	}
+#endif
+	if (err)
+		return -2;
+
+	printf("ARCINFO: ressurected\n");
+
+	return err;
 }
 
 int get_arc_info(void)
@@ -269,7 +377,7 @@ done:
 	return 0;
 }
 
-static int do_arc_cmd(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[])
+static int do_arc_cmd(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {
 	const char *cmd;
 	int ret = -1;
@@ -288,6 +396,10 @@ static int do_arc_cmd(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[])
 		ret = get_arc_info();
 		goto done;
 	}
+	if (strcmp(cmd, "ressurect") == 0) {
+		ret = ressurect_arc_info();
+		goto done;
+	}
 done:
 	if (ret == -1)
 		return CMD_RET_USAGE;
@@ -299,7 +411,8 @@ done:
 	return ret;
 }
 
-U_BOOT_CMD(arc, 6, 1, do_arc_cmd,
+U_BOOT_CMD(arc,   6,   1,     do_arc_cmd,
 	   "Arcturus product command sub-system",
 	   "product serial hwaddr0 hwaddr1 hwaddr2    - save Arcturus factory env\n"
-	   "info                                      - show Arcturus factory env\n\n");
+	   "info                                      - show Arcturus factory env\n\n"
+	);

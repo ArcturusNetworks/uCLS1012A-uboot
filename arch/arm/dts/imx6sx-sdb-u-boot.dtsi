@@ -3,14 +3,18 @@
  * Copyright 2018 NXP
  */
 
-&qspi2 {
-	num-cs = <2>;
-
-	flash0: n25q256a@0 {
-		compatible = "jedec,spi-nor";
+&ethphy1 {
+	vddio1: vddio-regulator {
+		regulator-name = "VDDIO";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
 	};
+};
 
-	flash1: n25q256a@1 {
-		compatible = "jedec,spi-nor";
+&ethphy2 {
+	vddio2: vddio-regulator {
+		regulator-name = "VDDIO";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
 	};
 };

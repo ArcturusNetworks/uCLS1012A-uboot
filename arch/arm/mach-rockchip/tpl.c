@@ -6,11 +6,15 @@
 #include <common.h>
 #include <debug_uart.h>
 #include <dm.h>
+#include <hang.h>
+#include <init.h>
+#include <log.h>
 #include <ram.h>
 #include <spl.h>
 #include <version.h>
 #include <asm/io.h>
 #include <asm/arch-rockchip/bootrom.h>
+#include <linux/bitops.h>
 
 #define TIMER_LOAD_COUNT_L	0x00
 #define TIMER_LOAD_COUNT_H	0x04
@@ -77,9 +81,12 @@ void board_init_f(ulong dummy)
 	}
 }
 
-void board_return_to_bootrom(void)
+int board_return_to_bootrom(struct spl_image_info *spl_image,
+			    struct spl_boot_device *bootdev)
 {
 	back_to_bootrom(BROM_BOOT_NEXTSTAGE);
+
+	return 0;
 }
 
 u32 spl_boot_device(void)

@@ -11,6 +11,7 @@
 
 #include <common.h>
 #include <ahci.h>
+#include <blk.h>
 #include <dm.h>
 #include <command.h>
 #include <part.h>
@@ -78,7 +79,8 @@ int sata_probe(int devnum)
 #endif
 }
 
-static int do_sata(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+static int do_sata(struct cmd_tbl *cmdtp, int flag, int argc,
+		   char *const argv[])
 {
 	int rc = 0;
 
@@ -87,8 +89,10 @@ static int do_sata(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 
 		if (argc == 3)
 			devnum = (int)simple_strtoul(argv[2], NULL, 10);
-		if (!strcmp(argv[1], "stop"))
+		if (!strcmp(argv[1], "stop")) {
+			sata_curr_device = -1;
 			return sata_remove(devnum);
+		}
 
 		if (!strcmp(argv[1], "init")) {
 			if (sata_curr_device != -1) {
@@ -97,7 +101,11 @@ static int do_sata(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 					return rc;
 			}
 
-			return sata_probe(devnum);
+			rc = sata_probe(devnum);
+			if (rc < 0)
+				return CMD_RET_FAILURE;
+			sata_curr_device = rc;
+			return CMD_RET_SUCCESS;
 		}
 	}
 

@@ -7,6 +7,7 @@
 
 #include <config.h>
 #include <common.h>
+#include <env_internal.h>
 
 #define ENVN1(b) #b
 #define ENVN(b) ENVN1(b)

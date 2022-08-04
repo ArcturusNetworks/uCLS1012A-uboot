@@ -5,6 +5,6 @@
 #
 
 obj-y += ucls1012a.o
-obj-y += eth.o
+obj-$(CONFIG_FSL_PFE) += eth.o
 obj-$(CONFIG_HX3_HUB_INIT) += hx3_init.o
 obj-y += ../../freescale/common/

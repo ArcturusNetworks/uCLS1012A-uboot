@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+ OR X11
 /*
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  *
  * PCIe Gen4 driver for NXP Layerscape SoCs
  * Author: Hou Zhiqiang <Minder.Hou@gmail.com>
@@ -8,6 +8,8 @@
  */
 
 #include <common.h>
+#include <dm.h>
+#include <log.h>
 #include <pci.h>
 #include <asm/arch/fsl_serdes.h>
 #include <asm/io.h>
@@ -150,7 +152,6 @@ static void fdt_fixup_pcie_ls_gen4(void *blob)
 		pcie = dev_get_priv(bus);
 
 		streamid = pcie_next_streamid(pcie->stream_id_cur, pcie->idx);
-
 		if (streamid < 0) {
 			debug("ERROR: no stream ids free\n");
 			continue;
@@ -165,7 +166,7 @@ static void fdt_fixup_pcie_ls_gen4(void *blob)
 		}
 
 		/* the DT fixup must be relative to the hose first_busno */
-		bdf = dm_pci_get_bdf(dev) - PCI_BDF(bus->seq, 0, 0);
+		bdf = dm_pci_get_bdf(dev) - PCI_BDF(dev_seq(bus), 0, 0);
 		/* map PCI b.d.f to streamID in LUT */
 		ls_pcie_g4_lut_set_mapping(pcie, index, bdf >> 8, streamid);
 		/* update msi-map in device tree */
@@ -225,7 +226,7 @@ static void ft_pcie_layerscape_gen4_setup(void *blob, struct ls_pcie_g4 *pcie)
 }
 
 /* Fixup Kernel DT for PCIe */
-void ft_pci_setup_ls_gen4(void *blob, bd_t *bd)
+void ft_pci_setup_ls_gen4(void *blob, struct bd_info *bd)
 {
 	struct ls_pcie_g4 *pcie;
 
@@ -238,7 +239,7 @@ void ft_pci_setup_ls_gen4(void *blob, bd_t *bd)
 }
 
 #else /* !CONFIG_OF_BOARD_SETUP */
-void ft_pci_setup_ls_gen4(void *blob, bd_t *bd)
+void ft_pci_setup_ls_gen4(void *blob, struct bd_info *bd)
 {
 }
 #endif

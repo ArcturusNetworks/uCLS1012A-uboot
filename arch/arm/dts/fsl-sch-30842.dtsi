@@ -2,8 +2,7 @@
 /*
  * Device tree fragment for RCW SCH-30842 card
  *
- * Copyright 2019 NXP
- *
+ * Copyright 2019-2021 NXP Semiconductors
  */
 
 /*
@@ -12,7 +11,6 @@
  * SGMII-2500, USXGMII, XFI.
  * PHY address is 0x02.
  */
-
 phy@02 {
 	reg = <0x02>;
 	mdi-reversal = <1>;

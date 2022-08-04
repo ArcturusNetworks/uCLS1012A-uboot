@@ -2,7 +2,7 @@
 /*
  * Cortina PHY drivers framework
  *
- * Copyright 2018 NXP
+ * Copyright 2018-2021 NXP
  * Copyright (C) 2006-2017 Inphi Corporation, Inc. All rights reserved.
  */
 
@@ -10,11 +10,11 @@
 #define __CORTINA_API_H_
 
 #include <config.h>
-#include <common.h>
 #include <malloc.h>
 #include <linux/ctype.h>
 #include <linux/string.h>
 #include <linux/err.h>
+#include <linux/delay.h>
 #include <phy.h>
 
 /* endiannes */

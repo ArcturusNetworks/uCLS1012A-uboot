@@ -6,6 +6,7 @@
 
 #include <common.h>
 #include <dm.h>
+#include <net.h>
 #include <asm/io.h>
 #include <netdev.h>
 #include <fm_eth.h>
@@ -17,6 +18,7 @@
 #include <asm/arch-fsl-layerscape/config.h>
 #include <asm/arch-fsl-layerscape/immap_lsch2.h>
 #include <asm/arch/fsl_serdes.h>
+#include <linux/delay.h>
 #include <net/pfe_eth/pfe_eth.h>
 #include <dm/platform_data/pfe_dm_eth.h>
 
@@ -29,7 +31,7 @@
 static inline void ucls1012a_reset_phy(void)
 {
 #if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
-	unsigned int val, mask;
+	unsigned int mask;
 	struct ccsr_gpio *pgpio = (void *)(GPIO1_BASE_ADDR);
 
 	mask = MASK_ETH_PHYA_RST;
@@ -37,13 +39,10 @@ static inline void ucls1012a_reset_phy(void)
 	mask |= MASK_ETH_PHYB_RST;
 #endif
 	setbits_be32(&pgpio->gpdir, mask);
-
-	val = in_be32(&pgpio->gpdat);
-	setbits_be32(&pgpio->gpdat, val & ~mask);
-	mdelay(10);
-
-	val = in_be32(&pgpio->gpdat);
-	setbits_be32(&pgpio->gpdat, val | mask);
+	mdelay(50);
+	clrbits_be32(&pgpio->gpdat, mask);
+	mdelay(50);
+	setbits_be32(&pgpio->gpdat, mask);
 	mdelay(50);
 #endif
 }
@@ -107,6 +106,12 @@ static struct pfe_eth_pdata pfe_pdata0 = {
 	},
 };
 
+U_BOOT_DRVINFO(ls1012a_pfe0) = {
+	.name = "pfe_eth",
+	.plat = &pfe_pdata0,
+};
+
+#if !defined(CONFIG_SUBTARGET_SOM2X60) && !defined(CONFIG_SUBTARGET_DONGLE)
 static struct pfe_eth_pdata pfe_pdata1 = {
 	.pfe_eth_pdata_mac = {
 		.iobase = (phys_addr_t)EMAC2_BASE_ADDR,
@@ -119,12 +124,8 @@ static struct pfe_eth_pdata pfe_pdata1 = {
 	},
 };
 
-U_BOOT_DEVICE(ls1012a_pfe0) = {
+U_BOOT_DRVINFO(ls1012a_pfe1) = {
 	.name = "pfe_eth",
-	.platdata = &pfe_pdata0,
+	.plat = &pfe_pdata1,
 };
-
-U_BOOT_DEVICE(ls1012a_pfe1) = {
-	.name = "pfe_eth",
-	.platdata = &pfe_pdata1,
-};
+#endif

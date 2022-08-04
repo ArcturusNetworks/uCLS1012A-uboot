@@ -42,5 +42,5 @@ config MSCC_FELIX_SWITCH
 	depends on DM_DSA && DM_PCI
 	select FSL_ENETC
 	help
-	  This driver supports the Ethernet switch integrated in LS1028A NXP
-	  SoC.
+	  This driver supports the Ethernet switch integrated in the
+	  NXP LS1028A SoC.

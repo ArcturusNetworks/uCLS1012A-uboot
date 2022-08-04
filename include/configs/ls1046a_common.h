@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright 2016 Freescale Semiconductor
- * Copyright 2019-2020 NXP
+ * Copyright 2019-2021 NXP
  */
 
 #ifndef __LS1046A_COMMON_H
@@ -16,7 +16,6 @@
 #define SPL_NO_QSPI
 #define SPL_NO_USB
 #define SPL_NO_SATA
-#undef CONFIG_DM_I2C
 #endif
 #if defined(CONFIG_SPL_BUILD) && \
 	(defined(CONFIG_NAND_BOOT) || defined(CONFIG_QSPI_BOOT))
@@ -48,7 +47,7 @@
 #define CONFIG_SYS_SDRAM_BASE		CONFIG_SYS_DDR_SDRAM_BASE
 #define CONFIG_SYS_DDR_BLOCK2_BASE      0x880000000ULL
 
-#define CPU_RELEASE_ADDR               secondary_boot_func
+#define CPU_RELEASE_ADDR               secondary_boot_addr
 
 /* Generic Timer Definitions */
 #define COUNTER_FREQUENCY		25000000	/* 25MHz */
@@ -74,7 +73,7 @@
 					CONFIG_SPL_BSS_MAX_SIZE)
 #define CONFIG_SYS_SPL_MALLOC_SIZE	0x100000
 
-#ifdef CONFIG_SECURE_BOOT
+#ifdef CONFIG_NXP_ESBC
 #define CONFIG_U_BOOT_HDR_SIZE				(16 << 10)
 /*
  * HDR would be appended at end of image and copied to DDR along
@@ -85,7 +84,7 @@
 #define CONFIG_SYS_MONITOR_LEN		(0x100000 + CONFIG_U_BOOT_HDR_SIZE)
 #else
 #define CONFIG_SYS_MONITOR_LEN		0x100000
-#endif /* ifdef CONFIG_SECURE_BOOT */
+#endif /* ifdef CONFIG_NXP_ESBC */
 #endif
 
 #if defined(CONFIG_QSPI_BOOT) && defined(CONFIG_SPL)
@@ -99,7 +98,6 @@
 					CONFIG_SPL_BSS_MAX_SIZE)
 #define CONFIG_SYS_SPL_MALLOC_SIZE	0x100000
 #define CONFIG_SYS_MONITOR_LEN		0x100000
-#define CONFIG_SYS_UBOOT_START		CONFIG_SYS_TEXT_BASE
 #endif
 
 /* NAND SPL */
@@ -127,9 +125,20 @@
 #define CONFIG_SYS_MONITOR_LEN		0xa0000
 #endif
 
+/* GPIO */
+#ifdef CONFIG_DM_GPIO
+#ifndef CONFIG_MPC8XXX_GPIO
+#define CONFIG_MPC8XXX_GPIO
+#endif
+#endif
+
 /* I2C */
-#ifndef CONFIG_DM_I2C
+#if !CONFIG_IS_ENABLED(DM_I2C)
 #define CONFIG_SYS_I2C
+#define CONFIG_SYS_I2C_MXC_I2C1		/* enable I2C bus 1 */
+#define CONFIG_SYS_I2C_MXC_I2C2		/* enable I2C bus 2 */
+#define CONFIG_SYS_I2C_MXC_I2C3		/* enable I2C bus 3 */
+#define CONFIG_SYS_I2C_MXC_I2C4		/* enable I2C bus 4 */
 #else
 #define CONFIG_I2C_SET_DEFAULT_BUS_NUM
 #define CONFIG_I2C_DEFAULT_BUS_NUMBER 0
@@ -155,8 +164,6 @@
 #define CONFIG_SYS_SCSI_MAX_DEVICE		(CONFIG_SYS_SCSI_MAX_SCSI_ID * \
 						CONFIG_SYS_SCSI_MAX_LUN)
 #endif
-
-/* Command line configuration */
 
 /* MMC */
 #ifndef SPL_NO_MMC
@@ -228,9 +235,7 @@
 	"hwconfig=fsl_ddr:bank_intlv=auto\0"	\
 	"ramdisk_addr=0x800000\0"		\
 	"ramdisk_size=0x2000000\0"		\
-	"fdt_high=0xffffffffffffffff\0"		\
-	"initrd_high=0xffffffffffffffff\0"	\
-	"fdt_addr=0x64f00000\0"                 \
+	"bootm_size=0x10000000\0"		\
 	"kernel_addr=0x61000000\0"              \
 	"scriptaddr=0x80000000\0"               \
 	"scripthdraddr=0x80080000\0"		\
@@ -239,6 +244,7 @@
 	"load_addr=0xa0000000\0"            \
 	"kernel_addr_r=0x81000000\0"            \
 	"fdt_addr_r=0x90000000\0"               \
+	"fdt_addr=0x90000000\0"                 \
 	"ramdisk_addr_r=0xa0000000\0"           \
 	"kernel_start=0x1000000\0"		\
 	"kernelheader_start=0x600000\0"		\
@@ -281,7 +287,7 @@
 	"nand_bootcmd=echo Trying load from nand..;"      \
 		"nand info; nand read $load_addr "         \
 		"$kernel_start $kernel_size; env exists secureboot "	\
-		"&& nand read $kernelheader_addr_r $kernelheader_start "	\
+		"&& nand read $kernelheader_addr_r $kernelheader_start " \
 		"$kernelheader_size && esbc_validate ${kernelheader_addr_r}; " \
 		"bootm $load_addr#$board\0"		\
 	"nor_bootcmd=echo Trying load from nor..;"	\

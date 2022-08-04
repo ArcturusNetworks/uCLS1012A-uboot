@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2016, NVIDIA CORPORATION.
+ * Copyright 2017 NXP
+ *
  */
 
 #ifndef _POWER_DOMAIN_H
@@ -62,6 +64,19 @@ struct power_domain {
 	unsigned long id;
 	void *priv;
 };
+
+/**
+ * power_domain_lookup_name - Lookup the power domain device by name and request it.
+ *
+ * This looks up and requests a provider power domain by using its device name. This
+ * skip the associated client device, but directly get the power domain device.
+ *
+ * @name:        The power domain device's name.
+ * @power_domain        A pointer to a power domain struct to initialize.
+ * @return 0 if OK, or a negative error code.
+ */
+
+int power_domain_lookup_name(const char *name, struct power_domain *power_domain);
 
 /**
  * power_domain_get - Get/request the power domain for a device.
@@ -152,6 +167,40 @@ int power_domain_off(struct power_domain *power_domain);
 static inline int power_domain_off(struct power_domain *power_domain)
 {
 	return -ENOSYS;
+}
+#endif
+
+/**
+ * dev_power_domain_on - Enable power domains for a device .
+ *
+ * @dev:		The client device.
+ *
+ * @return 0 if OK, or a negative error code.
+ */
+#if (CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)) && \
+	CONFIG_IS_ENABLED(POWER_DOMAIN)
+int dev_power_domain_on(struct udevice *dev);
+#else
+static inline int dev_power_domain_on(struct udevice *dev)
+{
+	return 0;
+}
+#endif
+
+/**
+ * dev_power_domain_off - Disable power domains for a device .
+ *
+ * @dev:		The client device.
+ *
+ * @return 0 if OK, or a negative error code.
+ */
+#if (CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)) && \
+	CONFIG_IS_ENABLED(POWER_DOMAIN)
+int dev_power_domain_off(struct udevice *dev);
+#else
+static inline int dev_power_domain_off(struct udevice *dev)
+{
+	return 0;
 }
 #endif
 

@@ -29,6 +29,7 @@ static void set_wait_for_bits_clear(void *ptr, u32 value, u32 bits)
 void mmdc_init(const struct fsl_mmdc_info *priv)
 {
 	struct mmdc_regs *mmdc = (struct mmdc_regs *)CONFIG_SYS_FSL_DDR_ADDR;
+	unsigned int tmp;
 
 	/* 1. set configuration request */
 	out_be32(&mmdc->mdscr, MDSCR_ENABLE_CON_REQ);
@@ -50,7 +51,8 @@ void mmdc_init(const struct fsl_mmdc_info *priv)
 
 	/* 5. configure DDR physical parameters */
 	/* set row/column address width, burst length, data bus width */
-	out_be32(&mmdc->mdctl, (priv->mdctl & ~(MDCTL_SDE0 | MDCTL_SDE1)));
+	tmp = priv->mdctl & ~(MDCTL_SDE0 | MDCTL_SDE1);
+	out_be32(&mmdc->mdctl, tmp);
 	/* configure address space partition */
 	out_be32(&mmdc->mdasp, priv->mdasp);
 
@@ -58,11 +60,9 @@ void mmdc_init(const struct fsl_mmdc_info *priv)
 
 	/* 7. enable MMDC with the desired chip select */
 #if (CONFIG_CHIP_SELECTS_PER_CTRL == 1)
-		out_be32(&mmdc->mdctl, (priv->mdctl | MDCTL_SDE0));
+		out_be32(&mmdc->mdctl, tmp | MDCTL_SDE0);
 #elif (CONFIG_CHIP_SELECTS_PER_CTRL == 2)
-		out_be32(&mmdc->mdctl, (priv->mdctl | MDCTL_SDE0 | MDCTL_SDE1));
-#else
-#error "Unsupported DDRC_NUM_CS"
+		out_be32(&mmdc->mdctl, tmp | MDCTL_SDE0 | MDCTL_SDE1);
 #endif
 
 	/* 8a. dram init sequence: update MRs for ZQ, ODT, PRE, etc */

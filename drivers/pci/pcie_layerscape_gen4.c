@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0+ OR X11
 /*
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2020 NXP
  *
  * PCIe Gen4 driver for NXP Layerscape SoCs
  * Author: Hou Zhiqiang <Minder.Hou@gmail.com>
  */
 
 #include <common.h>
+#include <log.h>
 #include <asm/arch/fsl_serdes.h>
 #include <pci.h>
+#include <asm/global_data.h>
 #include <asm/io.h>
 #include <errno.h>
 #include <malloc.h>
@@ -190,13 +192,13 @@ static int ls_pcie_g4_addr_valid(struct ls_pcie_g4 *pcie, pci_dev_t bdf)
 	if (!pcie->enabled)
 		return -ENXIO;
 
-	if (PCI_BUS(bdf) < bus->seq)
+	if (PCI_BUS(bdf) < dev_seq(bus))
 		return -EINVAL;
 
-	if ((PCI_BUS(bdf) > bus->seq) && (!ls_pcie_g4_link_up(pcie)))
+	if ((PCI_BUS(bdf) > dev_seq(bus)) && (!ls_pcie_g4_link_up(pcie)))
 		return -EINVAL;
 
-	if (PCI_BUS(bdf) <= (bus->seq + 1) && (PCI_DEV(bdf) > 0))
+	if (PCI_BUS(bdf) <= (dev_seq(bus) + 1) && (PCI_DEV(bdf) > 0))
 		return -EINVAL;
 
 	return 0;
@@ -208,7 +210,7 @@ void *ls_pcie_g4_conf_address(struct ls_pcie_g4 *pcie, pci_dev_t bdf,
 	struct udevice *bus = pcie->bus;
 	u32 target;
 
-	if (PCI_BUS(bdf) == bus->seq) {
+	if (PCI_BUS(bdf) == dev_seq(bus)) {
 		if (offset < INDIRECT_ADDR_BNDRY) {
 			ccsr_set_page(pcie, 0);
 			return pcie->ccsr + offset;
@@ -218,7 +220,7 @@ void *ls_pcie_g4_conf_address(struct ls_pcie_g4 *pcie, pci_dev_t bdf,
 		return pcie->ccsr + OFFSET_TO_PAGE_ADDR(offset);
 	}
 
-	target = PAB_TARGET_BUS(PCI_BUS(bdf) - bus->seq) |
+	target = PAB_TARGET_BUS(PCI_BUS(bdf) - dev_seq(bus)) |
 		 PAB_TARGET_DEV(PCI_DEV(bdf)) |
 		 PAB_TARGET_FUNC(PCI_FUNC(bdf));
 
@@ -227,7 +229,7 @@ void *ls_pcie_g4_conf_address(struct ls_pcie_g4 *pcie, pci_dev_t bdf,
 	return pcie->cfg + offset;
 }
 
-static int ls_pcie_g4_read_config(struct udevice *bus, pci_dev_t bdf,
+static int ls_pcie_g4_read_config(const struct udevice *bus, pci_dev_t bdf,
 				  uint offset, ulong *valuep,
 				  enum pci_size_t size)
 {
@@ -241,9 +243,6 @@ static int ls_pcie_g4_read_config(struct udevice *bus, pci_dev_t bdf,
 	}
 
 	address = ls_pcie_g4_conf_address(pcie, bdf, offset);
-
-	if (pcie->rev == REV_1_0 && offset == PCI_VENDOR_ID)
-		lut_writel(pcie, 0x0 << PCIE_LUT_GCR_RRE, PCIE_LUT_GCR);
 
 	switch (size) {
 	case PCI_SIZE_8:
@@ -259,9 +258,6 @@ static int ls_pcie_g4_read_config(struct udevice *bus, pci_dev_t bdf,
 		ret = -EINVAL;
 		break;
 	}
-
-	if (pcie->rev == REV_1_0 && offset == PCI_VENDOR_ID)
-		lut_writel(pcie, 0x1 << PCIE_LUT_GCR_RRE, PCIE_LUT_GCR);
 
 	return ret;
 }
@@ -378,11 +374,6 @@ static void ls_pcie_g4_ep_set_bar_size(struct ls_pcie_g4 *pcie, int pf,
 	u32 mask_l = lower_32_bits(~(size - 1));
 	u32 mask_h = upper_32_bits(~(size - 1));
 
-	/* A-011452 workaround: set the VF BAR1 to 8MB */
-	if (pcie->rev == REV_1_0 && vf_bar && bar == 1) {
-		mask_l = lower_32_bits(~(SZ_8M - 1));
-		mask_h = upper_32_bits(~(SZ_8M - 1));
-	}
 	ccsr_writel(pcie, GPEX_BAR_SELECT, bar_pos);
 	ccsr_writel(pcie, GPEX_BAR_SIZE_LDW, mask_l);
 	ccsr_writel(pcie, GPEX_BAR_SIZE_UDW, mask_h);
@@ -465,6 +456,7 @@ static int ls_pcie_g4_probe(struct udevice *dev)
 	u32 link_ctrl_sta;
 	u32 val;
 	int ret;
+	fdt_size_t cfg_size;
 
 	pcie->bus = dev;
 
@@ -482,7 +474,8 @@ static int ls_pcie_g4_probe(struct udevice *dev)
 
 	pcie->enabled = is_serdes_configured(PCIE_SRDS_PRTCL(pcie->idx));
 	if (!pcie->enabled) {
-		printf("PCIe%d: %s disabled\n", pcie->idx, dev->name);
+		printf("PCIe%d: %s disabled\n", PCIE_SRDS_PRTCL(pcie->idx),
+		       dev->name);
 		return 0;
 	}
 
@@ -495,6 +488,13 @@ static int ls_pcie_g4_probe(struct udevice *dev)
 	if (ret) {
 		printf("%s: resource \"config\" not found\n", dev->name);
 		return ret;
+	}
+
+	cfg_size = fdt_resource_size(&pcie->cfg_res);
+	if (cfg_size < SZ_4K) {
+		printf("PCIe%d: %s Invalid size(0x%llx) for resource \"config\",expected minimum 0x%x\n",
+		       PCIE_SRDS_PRTCL(pcie->idx), dev->name, cfg_size, SZ_4K);
+		return 0;
 	}
 
 	pcie->cfg = map_physmem(pcie->cfg_res.start,
@@ -529,23 +529,15 @@ static int ls_pcie_g4_probe(struct udevice *dev)
 	      dev->name, (unsigned long)pcie->ccsr, (unsigned long)pcie->cfg,
 	      pcie->big_endian);
 
-	pcie->rev = readb(pcie->ccsr + PCI_REVISION_ID);
-
-	/* Set ACK latency timeout */
-	if (pcie->rev == REV_1_0) {
-		val = ccsr_readl(pcie, GPEX_ACK_REPLAY_TO);
-		val &= ~(ACK_LAT_TO_VAL_MASK << ACK_LAT_TO_VAL_SHIFT);
-		val |= (4 << ACK_LAT_TO_VAL_SHIFT);
-		ccsr_writel(pcie, GPEX_ACK_REPLAY_TO, val);
-	}
-
 	pcie->mode = readb(pcie->ccsr + PCI_HEADER_TYPE) & 0x7f;
 
 	if (pcie->mode == PCI_HEADER_TYPE_NORMAL) {
-		printf("PCIe%u: %s %s", pcie->idx, dev->name, "Endpoint");
+		printf("PCIe%u: %s %s", PCIE_SRDS_PRTCL(pcie->idx), dev->name,
+		       "Endpoint");
 		ls_pcie_g4_setup_ep(pcie);
 	} else {
-		printf("PCIe%u: %s %s", pcie->idx, dev->name, "Root Complex");
+		printf("PCIe%u: %s %s", PCIE_SRDS_PRTCL(pcie->idx), dev->name,
+		       "Root Complex");
 		ls_pcie_g4_setup_ctrl(pcie);
 	}
 
@@ -589,5 +581,5 @@ U_BOOT_DRIVER(pcie_layerscape_gen4) = {
 	.of_match = ls_pcie_g4_ids,
 	.ops = &ls_pcie_g4_ops,
 	.probe	= ls_pcie_g4_probe,
-	.priv_auto_alloc_size = sizeof(struct ls_pcie_g4),
+	.priv_auto	= sizeof(struct ls_pcie_g4),
 };

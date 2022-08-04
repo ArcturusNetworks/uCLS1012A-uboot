@@ -7,9 +7,11 @@
  */
 
 #include <common.h>
+#include <init.h>
 #include <spl.h>
 #include <version.h>
 #include <asm/io.h>
+#include <asm/ptrace.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/spr_defs.h>
 #include <asm/arch/spr_misc.h>
@@ -277,7 +279,8 @@ void board_init_f(ulong dummy)
  * BootROM code right after having initialized a few components like the DRAM).
  * The following function is called from SPL common code (board_init_r).
  */
-void board_return_to_bootrom(void)
+int board_return_to_bootrom(struct spl_image_info *spl_image,
+			    struct spl_boot_device *bootdev)
 {
 	/*
 	 * Retrieve the BootROM's stack pointer and jump back to the start of
@@ -294,4 +297,6 @@ void board_return_to_bootrom(void)
 		      "bl back_to_bootrom;"
 #endif
 		      );
+
+	return 0;
 }

@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: GPL-2.0+ OR X11
+/*
+ * uCLS1012A_SOM2x60 board device tree source
+ *
+ * Copyright 2022 Arcturus Networks, Inc.
+ *
+ */
+
+/dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+#include "fsl-ls1012a.dtsi"
+
+/ {
+	model = "uCLS1012A-SOM2X60";
+
+	aliases {
+		spi0 = &qspi;
+	};
+
+	chosen {
+		stdout-path = &duart0;
+	};
+};
+
+&qspi {
+	bus-num = <0>;
+	status = "okay";
+	u-boot,dm-pre-reloc;
+	reg = <0x0 0x1550000 0x0 0x10000>,
+	      <0x0 0x40000000 0x0 0x8000000>;
+	reg-names = "QuadSPI", "QuadSPI-memory";
+
+	qflash0: spi_flash@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		u-boot,dm-pre-reloc;
+		compatible = "jedec,spi-nor";
+		reg = <0>;      /* chip select */
+		spi-max-frequency = <20000000>;
+		m25p,fast-read;
+	};
+};
+
+&i2c0 {
+	status = "okay";
+
+	gpio2: pca9575@20 {
+		compatible = "nxp,pca9575";
+		label = "PCA9575";
+		reg =<0x20>;
+		gpio-controller;
+		#gpio-cells = <2>;
+	};
+
+	gpio3: pca9575@21 {
+		compatible = "nxp,pca9575";
+		label = "PCA9575";
+		reg =<0x21>;
+		gpio-controller;
+		#gpio-cells = <2>;
+	};
+};
+
+&duart0 {
+	status = "okay";
+};

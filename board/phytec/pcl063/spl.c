@@ -7,6 +7,7 @@
  */
 
 #include <common.h>
+#include <init.h>
 #include <spl.h>
 #include <asm/arch/clock.h>
 #include <asm/io.h>
@@ -151,7 +152,7 @@ int board_mmc_getcd(struct mmc *mmc)
 	return 1;
 }
 
-int board_mmc_init(bd_t *bis)
+int board_mmc_init(struct bd_info *bis)
 {
 	int i, ret;
 
@@ -183,28 +184,6 @@ int board_mmc_init(bd_t *bis)
 	return 0;
 }
 
-void board_boot_order(u32 *spl_boot_list)
-{
-	u32 bmode = imx6_src_get_boot_mode();
-	u8 boot_dev = BOOT_DEVICE_MMC1;
-
-	switch ((bmode & IMX6_BMODE_MASK) >> IMX6_BMODE_SHIFT) {
-	case IMX6_BMODE_SD:
-	case IMX6_BMODE_ESD:
-		boot_dev = BOOT_DEVICE_MMC1;
-		break;
-	case IMX6_BMODE_MMC:
-	case IMX6_BMODE_EMMC:
-		boot_dev = BOOT_DEVICE_MMC2;
-		break;
-	default:
-		/* Default - BOOT_DEVICE_MMC1 */
-		printf("Wrong board boot order\n");
-		break;
-	}
-
-	spl_boot_list[0] = boot_dev;
-}
 #endif /* CONFIG_FSL_ESDHC_IMX */
 
 void board_init_f(ulong dummy)

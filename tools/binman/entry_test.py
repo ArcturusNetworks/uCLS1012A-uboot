@@ -9,10 +9,10 @@ import os
 import sys
 import unittest
 
-import entry
-import fdt
-import fdt_util
-import tools
+from binman import entry
+from dtoc import fdt
+from dtoc import fdt_util
+from patman import tools
 
 class TestEntry(unittest.TestCase):
     def setUp(self):
@@ -37,26 +37,11 @@ class TestEntry(unittest.TestCase):
             else:
                 reload(entry)
         else:
-            import entry
-
-    def test1EntryNoImportLib(self):
-        """Test that we can import Entry subclassess successfully"""
-        sys.modules['importlib'] = None
-        global entry
-        self._ReloadEntry()
-        entry.Entry.Create(None, self.GetNode(), 'u-boot')
-        self.assertFalse(entry.have_importlib)
-
-    def test2EntryImportLib(self):
-        del sys.modules['importlib']
-        global entry
-        self._ReloadEntry()
-        entry.Entry.Create(None, self.GetNode(), 'u-boot-spl')
-        self.assertTrue(entry.have_importlib)
+            from binman import entry
 
     def testEntryContents(self):
         """Test the Entry bass class"""
-        import entry
+        from binman import entry
         base_entry = entry.Entry(None, None, None)
         self.assertEqual(True, base_entry.ObtainContents())
 
@@ -96,6 +81,11 @@ class TestEntry(unittest.TestCase):
         """Test the WriteChildData() method of the base class"""
         base = entry.Entry.Create(None, self.GetNode(), 'blob-dtb')
         self.assertTrue(base.WriteChildData(base))
+
+    def testReadChildData(self):
+        """Test the ReadChildData() method of the base class"""
+        base = entry.Entry.Create(None, self.GetNode(), 'blob-dtb')
+        self.assertIsNone(base.ReadChildData(base))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2001
- * (C) Copyright 2019 NXP
  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
  */
 
@@ -14,6 +13,7 @@
 #include <common.h>
 #include <command.h>
 #include <dm.h>
+#include <log.h>
 #include <rtc.h>
 #include <i2c.h>
 
@@ -132,34 +132,34 @@ static int pcf8563_rtc_get(struct udevice *dev, struct rtc_time *tmp)
 	mon_cent = dm_i2c_reg_read(dev, 0x07);
 	year	= dm_i2c_reg_read(dev, 0x08);
 
-	debug ("Get RTC year: %02x mon/cent: %02x mday: %02x wday: %02x "
-	       "hr: %02x min: %02x sec: %02x\n",
-	       year, mon_cent, mday, wday,
-	       hour, min, sec);
-	debug ("Alarms: wday: %02x day: %02x hour: %02x min: %02x\n",
-	       dm_i2c_reg_read(dev, 0x0C),
-	       dm_i2c_reg_read(dev, 0x0B),
-	       dm_i2c_reg_read(dev, 0x0A),
-	       dm_i2c_reg_read(dev, 0x09));
+	debug("Get RTC year: %02x mon/cent: %02x mday: %02x wday: %02x ",
+	      year, mon_cent, mday, wday);
+	debug("hr: %02x min: %02x sec: %02x\n",
+	      hour, min, sec);
+	debug("Alarms: wday: %02x day: %02x hour: %02x min: %02x\n",
+	      dm_i2c_reg_read(dev, 0x0C),
+	      dm_i2c_reg_read(dev, 0x0B),
+	      dm_i2c_reg_read(dev, 0x0A),
+	      dm_i2c_reg_read(dev, 0x09));
 
 	if (sec & 0x80) {
-		puts ("### Warning: RTC Low Voltage - date/time not reliable\n");
+		puts("### Warning: RTC Low Voltage - date/time not reliable\n");
 		rel = -1;
 	}
 
-	tmp->tm_sec = bcd2bin (sec & 0x7F);
-	tmp->tm_min = bcd2bin (min & 0x7F);
-	tmp->tm_hour = bcd2bin (hour & 0x3F);
-	tmp->tm_mday = bcd2bin (mday & 0x3F);
-	tmp->tm_mon = bcd2bin (mon_cent & 0x1F);
-	tmp->tm_year = bcd2bin (year) + ((mon_cent & 0x80) ? 1900 : 2000);
-	tmp->tm_wday = bcd2bin (wday & 0x07);
+	tmp->tm_sec = bcd2bin(sec & 0x7F);
+	tmp->tm_min = bcd2bin(min & 0x7F);
+	tmp->tm_hour = bcd2bin(hour & 0x3F);
+	tmp->tm_mday = bcd2bin(mday & 0x3F);
+	tmp->tm_mon = bcd2bin(mon_cent & 0x1F);
+	tmp->tm_year = bcd2bin(year) + ((mon_cent & 0x80) ? 1900 : 2000);
+	tmp->tm_wday = bcd2bin(wday & 0x07);
 	tmp->tm_yday = 0;
 	tmp->tm_isdst = 0;
 
-	debug ("Get DATE: %4d-%02d-%02d (wday=%d)  TIME: %2d:%02d:%02d\n",
-	       tmp->tm_year, tmp->tm_mon, tmp->tm_mday, tmp->tm_wday,
-	       tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
+	debug("Get DATE: %4d-%02d-%02d (wday=%d)  TIME: %2d:%02d:%02d\n",
+	      tmp->tm_year, tmp->tm_mon, tmp->tm_mday, tmp->tm_wday,
+	      tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
 
 	return rel;
 }
@@ -168,9 +168,9 @@ static int pcf8563_rtc_set(struct udevice *dev, const struct rtc_time *tmp)
 {
 	uchar century;
 
-	debug ("Set DATE: %4d-%02d-%02d (wday=%d)  TIME: %2d:%02d:%02d\n",
-	       tmp->tm_year, tmp->tm_mon, tmp->tm_mday, tmp->tm_wday,
-	       tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
+	debug("Set DATE: %4d-%02d-%02d (wday=%d)  TIME: %2d:%02d:%02d\n",
+	      tmp->tm_year, tmp->tm_mon, tmp->tm_mday, tmp->tm_wday,
+	      tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
 
 	dm_i2c_reg_write(dev, 0x08, bin2bcd(tmp->tm_year % 100));
 
@@ -194,7 +194,7 @@ static int pcf8563_rtc_reset(struct udevice *dev)
 	dm_i2c_reg_write(dev, 0x0D, 0x00);
 
 	/* clear Voltage Low bit */
-	dm_i2c_reg_write(dev, 0x02, dm_i2c_reg_read (dev, 0x02) & 0x7F);
+	dm_i2c_reg_write(dev, 0x02, dm_i2c_reg_read(dev, 0x02) & 0x7F);
 
 	/* reset all alarms */
 	dm_i2c_reg_write(dev, 0x09, 0x00);

@@ -2,6 +2,18 @@
 /*
  *  U-Boot - x86 Startup Code
  *
+ * This is always the first code to run from the U-Boot source. To spell it out:
+ *
+ * 1. When TPL (Tertiary Program Loader) is enabled, the boot flow is
+ * TPL->SPL->U-Boot and this file is used for TPL. Then start_from_tpl.S is used
+ * for SPL and start_from_spl.S is used for U-Boot proper.
+ *
+ * 2. When SPL (Secondary Program Loader) is enabled, but not TPL, the boot
+ * flow is SPL->U-Boot and this file is used for SPL. Then start_from_spl.S is
+ * used for U-Boot proper.
+ *
+ * 3. When neither TPL nor SPL is used, this file is used for U-Boot proper.
+ *
  * (C) Copyright 2008-2011
  * Graeme Russ, <graeme.russ@gmail.com>
  *
@@ -10,7 +22,6 @@
  */
 
 #include <config.h>
-#include <asm/global_data.h>
 #include <asm/post.h>
 #include <asm/processor.h>
 #include <asm/processor-flags.h>
@@ -65,7 +76,7 @@ _start:
 	lgdt	gdt_ptr2
 #endif
 
-	/* Load the segement registers to match the GDT loaded in start16.S */
+	/* Load the segment registers to match the GDT loaded in start16.S */
 	movl	$(X86_GDT_ENTRY_32BIT_DS * X86_GDT_ENTRY_SIZE), %eax
 	movw	%ax, %fs
 	movw	%ax, %ds
@@ -76,6 +87,7 @@ _start:
 	/* Clear the interrupt vectors */
 	lidt	blank_idt_ptr
 
+#ifdef CONFIG_USE_EARLY_BOARD_INIT
 	/*
 	 * Critical early platform init - generally not used, we prefer init
 	 * to happen later when we have a console, in case something goes
@@ -84,13 +96,15 @@ _start:
 	jmp	early_board_init
 .globl early_board_init_ret
 early_board_init_ret:
+#endif
+
 	post_code(POST_START)
 
 	/* Initialise Cache-As-RAM */
 	jmp	car_init
 .globl car_init_ret
 car_init_ret:
-#ifndef CONFIG_USE_HOB
+#ifdef CONFIG_USE_CAR
 	/*
 	 * We now have CONFIG_SYS_CAR_SIZE bytes of Cache-As-RAM (or SRAM,
 	 * or fully initialised SDRAM - we really don't care which)
@@ -112,6 +126,7 @@ car_init_ret:
 #endif
 #else
 	/*
+	 * Instructions for FSP1, but not FSP2:
 	 * U-Boot enters here twice. For the first time it comes from
 	 * car_init_done() with esp points to a temporary stack and esi
 	 * set to zero. For the second time it comes from fsp_init_done()
@@ -130,7 +145,7 @@ car_init_ret:
 
 	/* Get address of global_data */
 	mov	%fs:0, %edx
-#ifdef CONFIG_USE_HOB
+#if defined(CONFIG_USE_HOB) && !defined(CONFIG_USE_CAR)
 	/* Store the HOB list if we have one */
 	test	%esi, %esi
 	jz	skip_hob

@@ -5,10 +5,15 @@
 
 #include <common.h>
 #include <dm.h>
+#include <hang.h>
+#include <init.h>
+#include <log.h>
 #include <os.h>
 #include <spl.h>
+#include <asm/global_data.h>
 #include <asm/spl.h>
 #include <asm/state.h>
+#include <test/test.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -50,19 +55,14 @@ SPL_LOAD_IMAGE_METHOD("sandbox", 9, BOOT_DEVICE_BOARD, spl_board_load_image);
 void spl_board_init(void)
 {
 	struct sandbox_state *state = state_get_current();
-	struct udevice *dev;
 
 	preloader_console_init();
-	if (state->show_of_platdata) {
-		/*
-		 * Scan all the devices so that we can output their platform
-		 * data. See sandbox_spl_probe().
-		 */
-		printf("Scanning misc devices\n");
-		for (uclass_first_device(UCLASS_MISC, &dev);
-		     dev;
-		     uclass_next_device(&dev))
-			;
+
+	if (state->run_unittests) {
+		int ret;
+
+		ret = dm_test_main(state->select_unittests);
+		/* continue execution into U-Boot */
 	}
 }
 
@@ -77,4 +77,11 @@ void __noreturn jump_to_image_no_args(struct spl_image_info *spl_image)
 		printf("No filename provided for U-Boot\n");
 	}
 	hang();
+}
+
+int handoff_arch_save(struct spl_handoff *ho)
+{
+	ho->arch.magic = TEST_HANDOFF_MAGIC;
+
+	return 0;
 }

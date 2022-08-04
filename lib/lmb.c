@@ -7,37 +7,44 @@
  */
 
 #include <common.h>
+#include <image.h>
 #include <lmb.h>
+#include <log.h>
+#include <malloc.h>
 
 #define LMB_ALLOC_ANYWHERE	0
+
+void lmb_dump_all_force(struct lmb *lmb)
+{
+	unsigned long i;
+
+	printf("lmb_dump_all:\n");
+	printf("    memory.cnt		   = 0x%lx\n", lmb->memory.cnt);
+	printf("    memory.size		   = 0x%llx\n",
+	       (unsigned long long)lmb->memory.size);
+	for (i = 0; i < lmb->memory.cnt; i++) {
+		printf("    memory.reg[0x%lx].base   = 0x%llx\n", i,
+		       (unsigned long long)lmb->memory.region[i].base);
+		printf("		   .size   = 0x%llx\n",
+		       (unsigned long long)lmb->memory.region[i].size);
+	}
+
+	printf("\n    reserved.cnt	   = 0x%lx\n", lmb->reserved.cnt);
+	printf("    reserved.size	   = 0x%llx\n",
+	       (unsigned long long)lmb->reserved.size);
+	for (i = 0; i < lmb->reserved.cnt; i++) {
+		printf("    reserved.reg[0x%lx].base = 0x%llx\n", i,
+		       (unsigned long long)lmb->reserved.region[i].base);
+		printf("		     .size = 0x%llx\n",
+		       (unsigned long long)lmb->reserved.region[i].size);
+	}
+}
 
 void lmb_dump_all(struct lmb *lmb)
 {
 #ifdef DEBUG
-	unsigned long i;
-
-	debug("lmb_dump_all:\n");
-	debug("    memory.cnt		   = 0x%lx\n", lmb->memory.cnt);
-	debug("    memory.size		   = 0x%llx\n",
-	      (unsigned long long)lmb->memory.size);
-	for (i = 0; i < lmb->memory.cnt; i++) {
-		debug("    memory.reg[0x%lx].base   = 0x%llx\n", i,
-		      (unsigned long long)lmb->memory.region[i].base);
-		debug("		   .size   = 0x%llx\n",
-		      (unsigned long long)lmb->memory.region[i].size);
-	}
-
-	debug("\n    reserved.cnt	   = 0x%lx\n",
-		lmb->reserved.cnt);
-	debug("    reserved.size	   = 0x%llx\n",
-		(unsigned long long)lmb->reserved.size);
-	for (i = 0; i < lmb->reserved.cnt; i++) {
-		debug("    reserved.reg[0x%lx].base = 0x%llx\n", i,
-		      (unsigned long long)lmb->reserved.region[i].base);
-		debug("		     .size = 0x%llx\n",
-		      (unsigned long long)lmb->reserved.region[i].size);
-	}
-#endif /* DEBUG */
+	lmb_dump_all_force(lmb);
+#endif
 }
 
 static long lmb_addrs_overlap(phys_addr_t base1, phys_size_t size1,
@@ -108,24 +115,19 @@ static void lmb_reserve_common(struct lmb *lmb, void *fdt_blob)
 }
 
 /* Initialize the struct, add memory and call arch/board reserve functions */
-void lmb_init_and_reserve(struct lmb *lmb, bd_t *bd, void *fdt_blob)
+void lmb_init_and_reserve(struct lmb *lmb, struct bd_info *bd, void *fdt_blob)
 {
-#ifdef CONFIG_NR_DRAM_BANKS
 	int i;
-#endif
 
 	lmb_init(lmb);
-#ifdef CONFIG_NR_DRAM_BANKS
+
 	for (i = 0; i < CONFIG_NR_DRAM_BANKS; i++) {
 		if (bd->bi_dram[i].size) {
 			lmb_add(lmb, bd->bi_dram[i].start,
 				bd->bi_dram[i].size);
 		}
 	}
-#else
-	if (bd->bi_memsize)
-		lmb_add(lmb, bd->bi_memstart, bd->bi_memsize);
-#endif
+
 	lmb_reserve_common(lmb, fdt_blob);
 }
 
@@ -172,7 +174,7 @@ static long lmb_add_region(struct lmb_region *rgn, phys_addr_t base, phys_size_t
 			break;
 		} else if (lmb_addrs_overlap(base, size, rgnbase, rgnsize)) {
 			/* regions overlap */
-			return -1;
+			return -2;
 		}
 	}
 
@@ -285,6 +287,41 @@ static long lmb_overlaps_region(struct lmb_region *rgn, phys_addr_t base,
 	}
 
 	return (i < rgn->cnt) ? i : -1;
+}
+
+long lmb_reserve_overlap(struct lmb *lmb, phys_addr_t base, phys_size_t size)
+{
+	struct lmb_region *_rgn = &(lmb->reserved);
+	long ret = lmb_add_region(_rgn, base, size);
+	long overlap_rgn;
+	phys_addr_t res_base;
+	phys_size_t res_size;
+
+	/* Handle the overlap */
+	if (ret == -2) {
+		overlap_rgn = lmb_overlaps_region(_rgn, base, size);
+		res_base = lmb->reserved.region[overlap_rgn].base;
+		res_size = lmb->reserved.region[overlap_rgn].size;
+
+		if ((base >= res_base) && ((base + size) <= (res_base + res_size))) {
+			/* new region is inside reserved region, so it is already reserved */
+			return 0;
+		} else {
+			if (base < res_base) {
+				ret = lmb_reserve(lmb, base, res_base - base);
+				if (ret < 0)
+					return ret;
+			}
+
+			if ((base + size) > (res_base + res_size)) {
+				ret = lmb_reserve(lmb, res_base + res_size, (base + size) - (res_base + res_size));
+				if (ret < 0)
+					return ret;
+			}
+		}
+	}
+
+	return ret;
 }
 
 phys_addr_t lmb_alloc(struct lmb *lmb, phys_size_t size, ulong align)

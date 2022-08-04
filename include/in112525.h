@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 NXP
+ * Copyright 2018-2021 NXP
  * Copyright 2018 INPHI
  *
  * Redistribution and use in source and binary forms, with or without
