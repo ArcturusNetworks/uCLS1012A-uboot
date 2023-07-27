@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018-2022 Arcturus Networks, Inc.
+ * Copyright 2018-2023 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/ucls1012a/
  */
 
@@ -36,7 +36,7 @@ extern int hx3_hub_init(void);
 #endif
 char module_rev[4];
 
-#ifndef CONFIG_SUBTARGET_SOM120
+#if defined(CX_AUDIO_SUPPORT)
 #define MASK_CX_RST	0x10000000
 static void reset_cx(void)
 {
@@ -54,7 +54,7 @@ static void reset_cx(void)
 }
 #endif
 
-#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
+#if defined(I2C_GPIO_EXP)
 #define MASK_GPIOEX_RST	0x00000002
 static void reset_gpioex(void)
 {
@@ -97,10 +97,10 @@ int checkboard(void)
 	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
 	unsigned int rcw = gur_in32(&gur->rcwsr[9]);
 
-#ifndef CONFIG_SUBTARGET_SOM120
+#if defined(CX_AUDIO_SUPPORT)
 	reset_cx();
 #endif
-#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60)
+#if defined(I2C_GPIO_EXP)
 	reset_gpioex();
 #endif
 	module_rev[3] = (rcw >> 24) & 0xFF;
@@ -114,6 +114,8 @@ int checkboard(void)
 	printf("Board: uCLS1012A-SOM120 Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #elif CONFIG_SUBTARGET_SOM2X60
 	printf("Board: 006607-CD-MOD-E V%c.%c\n\r", get_board_rev(1), get_board_rev(2));
+#elif CONFIG_SUBTARGET_SOM314S
+	printf("Board: uCLS1012A-SOM314S Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #else
 	printf("Board: uCLS1012A-SOM Rev.%c.%c\n\r", get_board_rev(1), get_board_rev(2));
 #endif
@@ -196,7 +198,7 @@ int last_stage_init(void)
 	int rc;
 	uchar bus = 0;
 	struct udevice *dev = NULL;
-#ifndef CONFIG_SUBTARGET_SOM120
+#if defined(CX_AUDIO_SUPPORT)
 	u32 id32;
 #endif
 	rc = i2c_get_chip_for_busnum(bus, SYS_I2C_VR5100_ADDR, 1, &dev);
@@ -224,7 +226,7 @@ int last_stage_init(void)
 			printf("NCT72(@0x%x): ready\n", SYS_I2C_NCT72_ADDR);
 	}
 
-#ifndef CONFIG_SUBTARGET_SOM120
+#if defined(CX_AUDIO_SUPPORT)
 	rc = i2c_get_chip_for_busnum(bus, SYS_I2C_CX_ADDR, 1, &dev);
 	if (rc)
 		printf("failed to get device at address 0x%x\n", SYS_I2C_CX_ADDR);

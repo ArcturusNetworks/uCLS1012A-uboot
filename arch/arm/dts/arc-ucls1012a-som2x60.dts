@@ -11,7 +11,7 @@
 #include "fsl-ls1012a.dtsi"
 
 / {
-	model = "uCLS1012A-SOM2X60";
+	model = "uCLS1012A";
 
 	aliases {
 		spi0 = &qspi;

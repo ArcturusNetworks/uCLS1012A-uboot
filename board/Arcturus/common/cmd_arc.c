@@ -14,6 +14,7 @@
 #include <version.h>
 #include <env.h>
 #include <command.h>
+#include <linux/ctype.h>
 
 #include <asm/io.h>
 
@@ -37,6 +38,7 @@ static struct spi_flash *flash;
 static char smac[4][18];
 extern char module_rev[4];
 const char prefix[8] = "00:06:3";
+const char mac_00[18] = "00:00:00:00:00:00";
 
 static int ishwaddr(char *hwaddr)
 {
@@ -48,6 +50,24 @@ static int ishwaddr(char *hwaddr)
 		    hwaddr[14] == ':')
 			return 0;
 	return -1;
+}
+
+static int isallFF(char *hwaddr)
+{
+	if (toupper(hwaddr[0]) == 'F' &&
+	    toupper(hwaddr[1]) == 'F' &&
+	    toupper(hwaddr[3]) == 'F' &&
+	    toupper(hwaddr[4]) == 'F' &&
+	    toupper(hwaddr[6]) == 'F' &&
+	    toupper(hwaddr[7]) == 'F' &&
+	    toupper(hwaddr[9]) == 'F' &&
+	    toupper(hwaddr[10]) == 'F' &&
+	    toupper(hwaddr[12]) == 'F' &&
+	    toupper(hwaddr[13]) == 'F' &&
+	    toupper(hwaddr[15]) == 'F' &&
+	    toupper(hwaddr[16]) == 'F')
+			return 1;
+	return 0;
 }
 
 int set_arc_product(int argc, char *const argv[])
@@ -67,9 +87,18 @@ int set_arc_product(int argc, char *const argv[])
 		return -1;
 
 	strcpy(smac[0], argv[1]);
-	strcpy(smac[1], argv[2]);
-	strcpy(smac[2], argv[3]);
-	strcpy(smac[3], argv[4]);
+	if (isallFF(argv[2]))
+		strcpy(smac[1], mac_00);
+	else
+		strcpy(smac[1], argv[2]);
+	if (isallFF(argv[3]))
+		strcpy(smac[2], mac_00);
+	else
+		strcpy(smac[2], argv[3]);
+	if (isallFF(argv[4]))
+		strcpy(smac[3], mac_00);
+	else
+		strcpy(smac[3], argv[4]);
 
 	flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
 				CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);

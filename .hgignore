@@ -1,0 +1,4 @@
+syntax: glob
+rcw-pfe_ff.bin
+rcw_ff.bin
+tools/env/embedded.c

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright 2019-2022 Arcturus Networks Inc.
+ * Copyright 2019-2023 Arcturus Networks Inc.
  *           http://www.arcturusnetworks.com/products/ucls1012a/
  */
 
@@ -34,6 +34,18 @@
 #define CONFIG_CHIP_SELECTS_PER_CTRL	1
 
 /* Network PFE */
+
+#if defined(CONFIG_BOARD_T1)
+
+#define CONFIG_ETHADDR		00:19:D3:FF:FF:FF
+#define CONFIG_ETH1ADDR		00:19:D3:FF:FF:FE
+#define CONFIG_ETH2ADDR		00:19:D3:FF:FF:FD
+#define CONFIG_IPADDR		10.16.177.225
+#define CONFIG_SERVERIP		10.16.177.224
+#define CONFIG_NETMASK		255.255.252.0
+
+#else
+
 #define CONFIG_ETHADDR		00:06:3B:FF:FF:FF
 #define CONFIG_ETH1ADDR		00:06:3B:FF:FF:FE
 #define CONFIG_ETH2ADDR		00:06:3B:FF:FF:FD
@@ -43,6 +55,8 @@
 #define CONFIG_SERVERIP		192.168.1.80
 #define CONFIG_GATEWAYIP	192.168.1.1
 #define CONFIG_NETMASK		255.255.255.0
+
+#endif
 
 #ifndef CONFIG_SPL_BUILD
 #undef BOOT_TARGET_DEVICES
@@ -109,11 +123,128 @@
 #define SIZE_RCW	0x20000
 #define ADDRESS_PFE	0x20000
 #define SIZE_PFE	0x20000
-#define ADDRESS_PART0 0x00A00000
-#define SIZE_PART0    0x00800000
 
 #if defined(CONFIG_SUBTARGET_SOM) || defined(CONFIG_SUBTARGET_SOM120)
 
+#undef CONFIG_EXTRA_ENV_SETTINGS
+
+#if defined(CONFIG_BOARD_T1)
+
+	#define ADDRESS_PART0 0x00A00000
+	#define SIZE_PART0    0x00A00000
+	#define ADDRESS_PART1 0x01400000
+	#define SIZE_PART1    0x02000000
+	#define ADDRESS_PART2 0x03400000
+#ifdef CONFIG_SPI_FLASH_128M
+	#define SIZE_PART2    0x04C00000
+#else
+	#define SIZE_PART2    0x00C00000
+#endif
+#define MAX_PARTS_NUM 5
+
+#define CONFIG_EXTRA_ENV_SETTINGS				\
+	"bootcmd=run workingboot || run recoveryboot\0"		\
+	"verify=no\0"						\
+	"loadaddr=0x98000000\0"					\
+	"kernel_addr=0x100000\0"				\
+	"kernel_start=0x1000000\0"				\
+	"kernel_load=0x96000000\0"				\
+	"kernel_size=" __stringify(SIZE_PART0) "\0"		\
+	"ethaddr=" __stringify(CONFIG_ETHADDR) "\0"		\
+	"eth1addr=" __stringify(CONFIG_ETH1ADDR) "\0"		\
+	"ethactr=pfe_eth0\0"					\
+	"initrd_high=0xffffffff\0"				\
+	"verify=no\0"						\
+	"hwconfig=fsl_ddr:bank_intlv=auto\0"			\
+	"part0base=" __stringify(ADDRESS_PART0) "\0"		\
+	"part0size=" __stringify(SIZE_PART0) "\0"		\
+	"part1base=" __stringify(ADDRESS_PART1) "\0"		\
+	"part1size=" __stringify(SIZE_PART1) "\0"		\
+	"part2base=" __stringify(ADDRESS_PART2) "\0"		\
+	"part2size=" __stringify(SIZE_PART2) "\0"		\
+	"partBbase=" __stringify(ADDRESS_PARTB) "\0"		\
+	"partBsize=" __stringify(SIZE_PARTB) "\0"		\
+	"partEbase=" __stringify(ADDRESS_PARTE) "\0"		\
+	"partEsize=" __stringify(SIZE_PARTE) "\0"		\
+	"image0size=" __stringify(SIZE_PART0) "\0"		\
+	"image1size=" __stringify(SIZE_PART1) "\0"		\
+	"rcwbase=" __stringify(ADDRESS_RCW) "\0"		\
+	"fdt_high=0xffffffffffffffff\0"				\
+	"initrd_high=0xffffffffffffffff\0"			\
+	"kargs_rootdev=root=/dev/mtdblock2\0"			\
+	"kargs_misc=rootfstype=cramfs,squashfs,jffs2\0"		\
+	"kargs_misc2=quiet lpj=250000\0"			\
+	"kargs=setenv bootargs console=$console,$baudrate "	\
+		"$kargs_rootdev $kargs_misc $kargs_parts "	\
+		"$kargs_misc2\0"				\
+	"mactive=1\0"						\
+	"pactive=0\0"						\
+	"uboot= " __stringify(CONFIG_UBOOTPATH) "\0"		\
+	"ubootaddr=0x01000000\0"				\
+	"itest=tftp $kernel_load part0-000000.itb; "		\
+		"pfe stop; "					\
+		"run kargs; "					\
+		"bootm $kernel_load\0"				\
+	"testrecovery=tftp $loadaddr $serverip:recovery.itb; "	\
+		"pfe stop; "					\
+		"run kargs; "					\
+		"bootm $loadaddr\0"				\
+	"testworking=tftp $loadaddr $serverip:working.itb; "	\
+		"pfe stop; "					\
+		"run kargs; "					\
+		"bootm $loadaddr\0"				\
+	"program0=sf probe 0:0;"				\
+		"sf erase $part0base +$part0size; "		\
+		"sf write $loadaddr $part0base $filesize; "	\
+		"setenv image0size $filesize; "			\
+		"saveenv\0"					\
+	"program1=sf probe 0:0;"				\
+		"sf erase $part1base +$part1size; "		\
+		"sf write $loadaddr $part1base $filesize; "	\
+		"setenv image1size $filesize; "			\
+		"saveenv\0"					\
+	"program2=sf probe 0:0; "				\
+		"sf erase $part2base +$part2size; "		\
+		"sf write $loadaddr $part2base $filesize\0 "	\
+	"format2=sf probe 0:0; "				\
+		"sf erase $part2base +$part2size \0"		\
+	"program_firmware=sf probe 0:0; "			\
+		"sf erase $rcwbase +$filesize; "		\
+		"sf write $loadaddr $rcwbase $filesize\0"	\
+	"program_uboot=sf probe 0:0; "				\
+		"sf erase $partBbase +$partBsize; "		\
+		"sf write $loadaddr $partBbase $filesize\0"	\
+	"recoveryaddr=0x98000000\0"				\
+	"recoverybase=" __stringify(ADDRESS_PART0) "\0"		\
+	"recoverysize=" __stringify(SIZE_PART0) "\0"		\
+	"recoveryboot=pfe stop && "				\
+		"sf probe 0:0 && "				\
+		"sf read $recoveryaddr $recoverybase $recoverysize && "	\
+		"iminfo $recoveryaddr && "			\
+		"run kargs && bootm $recoveryaddr\0"		\
+	"recoveryflash=tftp $recoveryaddr $serverip:recovery.itb && "	\
+		"sf probe 0:0 && "				\
+		"sf erase $recoverybase +$recoverysize && "	\
+		"sf write $recoveryaddr $recoverybase $filesize\0"	\
+	"workingaddr=0x98000000\0"				\
+	"workingbase=" __stringify(ADDRESS_PART1) "\0"		\
+	"workingsize=" __stringify(SIZE_PART1) "\0"		\
+	"workingboot=pfe stop && "				\
+		"sf probe 0:0 && "				\
+		"sf read $workingaddr $workingbase $workingsize && "	\
+		"iminfo $workingaddr && "			\
+		"run kargs && bootm $workingaddr\0"		\
+	"workingflash=tftp $workingaddr $serverip:working.itb && "	\
+		"sf probe 0:0 && "				\
+		"sf erase $workingbase +$workingsize && "	\
+		"sf write $workingaddr $workingbase $filesize\0"\
+	"silent=1\0"						\
+	"console=ttyS0,115200n8\0"
+
+#else
+
+	#define ADDRESS_PART0 0x00A00000
+	#define SIZE_PART0    0x00800000
 #ifdef CONFIG_SPI_FLASH_128M
 	#define ADDRESS_PART1 0x01200000
 	#define SIZE_PART1    0x05580000
@@ -135,7 +266,6 @@
 #endif
 #define MAX_PARTS_NUM 6
 
-#undef CONFIG_EXTRA_ENV_SETTINGS
 #define CONFIG_EXTRA_ENV_SETTINGS				\
 	"verify=no\0"						\
 	"loadaddr=0x80100000\0"					\
@@ -202,10 +332,11 @@
 		"sf erase $partBbase +$partBsize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
 	"console=ttyS0,115200n8\0"
-
+#endif /* CONFIG_BOARD_T1 */
 #else
 #ifdef CONFIG_SUBTARGET_DONGLE
-
+	#define ADDRESS_PART0 0x00A00000
+	#define SIZE_PART0    0x00800000
 #ifdef CONFIG_SPI_FLASH_128M
 	#define ADDRESS_PART1 0x01200000
 	#define SIZE_PART1    0x05580000
@@ -229,20 +360,23 @@
 
 #undef CONFIG_EXTRA_ENV_SETTINGS
 #define CONFIG_EXTRA_ENV_SETTINGS					\
+	"APRODUCT=CDMODEV6 \0"						\
+	"AUTOPROGRAM=0 \0"						\
 	"bootcmd= "							\
-		"if test 1 -ne $autoprogram; then "			\
+		"if test 1 -ne $AUTOPROGRAM; then "			\
 		"echo; echo B$ run erase_all; echo; "			\
 		"echo Run erase_all only to recover pre-program modules; echo; echo; " \
-		"echo B$ run <GRXVP or MBARXSC or CDMODEV6>; echo; "	\
+		"echo B$ run <GRXVP or MBARXSC or CDMODEV6 or SOM314S>; echo; "	\
 		"echo Reset the module and press ESC; echo; "		\
 		"echo B$ env default -a; "				\
 		"echo B$ saveenv; "					\
 		"echo B$ arc product <serial> <hw0> <hw1> 00:00:00:00:00:00; echo; "	\
 		"echo Reset the module; echo; "				\
+		"echo; echo ... or set APRODUCT and enable AUTOPROGRAM;"\
+		"echo; echoM; "						\
 		"else run testpr; "					\
 		"fi \0"							\
 	"qspi_cs=1 \0"							\
-	"autoprogram=0 \0"						\
 	"wait_cs=echo; "						\
 		"setenv qspi_cs 1; "					\
 		"while test 0 -ne $qspi_cs; do "			\
@@ -260,14 +394,8 @@
 			"fi; "						\
 		"done \0"						\
 	"testpr=echo;"							\
-		"echo Step 1.;"						\
 		"echo;"							\
-		"run wait_cs;"						\
-		"echo;"							\
-		"echo Step 2.;"						\
-		"run erase_all;"					\
-		"echo;"							\
-		"echo Step 3.;"						\
+		"echo Start;"						\
 		"run program_fw;"					\
 		"echo;"							\
 		"echo Reset the module and press ESC;"			\
@@ -279,7 +407,7 @@
 		"echo;"							\
 		"echo Done. Device ready for tests. Reset the module; "	\
 		"echo \0"						\
-	"program_fw=run CDMODEV6 \0"					\
+	"program_fw=run $APRODUCT \0"				\
 	"ethaddr=" __stringify(CONFIG_ETHADDR) "\0"		\
 	"eth1addr=" __stringify(CONFIG_ETH1ADDR) "\0"		\
 	"initrd_high=0xffffffff\0"				\
@@ -407,30 +535,35 @@
 		"setenv USBID 0:1; "				\
 		"run program_all\0"				\
 	"CDMODEV6= "						\
-		"setenv PROD CDMOD-EV6; "			\
+		"setenv PROD CDMODEV6; "			\
 		"setenv PDIR CDMODEV6; "			\
 		"setenv USBID 0:1; "				\
 		"run program_all\0"				\
 	"SOM= "							\
-		"setenv PROD uCls1012a-SOM; "			\
-		"setenv PDIR UCLS1012A_SOM; "			\
+		"setenv PROD SOM; "				\
+		"setenv PDIR SOM; "				\
+		"setenv USBID 0:1; "				\
+		"run program_all\0 "				\
+	"SOM314S= "						\
+		"setenv PROD SOM314S; "				\
+		"setenv PDIR SOM314S; "				\
 		"setenv USBID 0:1; "				\
 		"run program_all\0 "				\
 	"SOM120= "						\
-		"setenv PROD uCls1012a-SOM120; "		\
-		"setenv PDIR UCLS1012A_SOM120; "		\
+		"setenv PROD SOM120; "				\
+		"setenv PDIR SOM120; "				\
 		"setenv USBID 0:1; "				\
 		"run program_all\0"				\
 	"SOM2X60= "						\
-		"setenv PROD uCls1012a-SOM2x60; "		\
-		"setenv PDIR UCLS1012A_SOM2X60; "		\
+		"setenv PROD SOM2x60; "				\
+		"setenv PDIR SOM2X60; "				\
 		"setenv USBID 0:1; "				\
 		"run program_all\0"				\
 	"program_all_usb= "					\
 		"echo !!!!!!!!!!!!!!!!!!!!!!!!!!; "		\
 		"echo !...Program from USB.....!; "		\
 		"echo !!!!!!!!!!!!!!!!!!!!!!!!!!; "		\
-		"usb start; "					\
+		"usb start; && run erase_all;"			\
 		"run USBB; "					\
 		"run USB0; "					\
 		"run USB1; "					\
@@ -439,11 +572,13 @@
 		"echo !!!!!!!!!!!!!!!!!!!!!!!!!!; "		\
 		"echo !...Program from TFTP....!; "		\
 		"echo !!!!!!!!!!!!!!!!!!!!!!!!!!; "		\
+		"run erase_all;"				\
 		"run TFTPB; "					\
 		"run TFTP0; "					\
 		"run TFTP1; "					\
 		"run TFTP2 \0"					\
 	"program_all= "						\
+		"run wait_cs;"					\
 		"if test $prog_dev = tftp; then "		\
 			"run program_all_tftp;"			\
 		"else "						\
@@ -452,7 +587,8 @@
 	"console=ttyS0,115200n8\0"
 
 #else
-
+	#define ADDRESS_PART0 0x00A00000
+	#define SIZE_PART0    0x00800000
 #ifdef CONFIG_SPI_FLASH_128M
 	#define ADDRESS_PART1 0x01200000
 	#define SIZE_PART1    0x05580000

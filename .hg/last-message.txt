@@ -1,2 +1,0 @@
-board/Arcturus/ucls1012a/bin/som120_rcw* SAI2 disabled
-Signed-Off: Oleksandr G Zhadan as <oleks@arcturusnetworks.com>

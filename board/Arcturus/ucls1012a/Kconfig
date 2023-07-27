@@ -17,20 +17,35 @@ choice
 
 config SUBTARGET_SOM314
 	bool "314 SOM Host"
+	select CX_AUDIO_SUPPORT
+
+config SUBTARGET_SOM314S
+	bool "Base UCLS1012A-SOM314S (smarc 2.1.1 compatible) image"
+	select HX3_HUB_INIT
+	select I2C_GPIO_EXP
 
 config SUBTARGET_SOM
 	bool "Base UCLS1012A-SOM image"
+	select CX_AUDIO_SUPPORT
 
 config SUBTARGET_SOM120
 	bool "Base UCLS1012A-SOM120 image"
+	select I2C_GPIO_EXP
 
 config SUBTARGET_SOM2X60
 	bool "Base UCLS1012A-SOM2x60 image"
+	select CX_AUDIO_SUPPORT
+	select I2C_GPIO_EXP
 
 config SUBTARGET_DONGLE
 	bool "UCLS1012A-SOM image for Programming Dongle"
 
 endchoice
+
+config BOARD_T1
+	depends on SUBTARGET_SOM120
+	bool "SUBTARGET_SOM120 on T1 board"
+	def_bool n
 
 config SPI_FLASH_128M
 	bool "128MBytes QSPI"
@@ -39,6 +54,13 @@ config SPI_FLASH_128M
 config HX3_HUB_INIT
 	bool "Init HX3 USB HUB"
 	def_bool n
+
+config CX_AUDIO_SUPPORT
+	bool "CX2070X codec support"
+	def_bool n
+
+config I2C_GPIO_EXP
+	bool "I2C GPIO expander"
 
 config FIRM_ADDR1
 	hex "Firmware Env Base address 1"

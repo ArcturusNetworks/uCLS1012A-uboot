@@ -1417,7 +1417,11 @@ else
   ifeq ($(CONFIG_SUBTARGET_SOM2X60),y)
 	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/som2x60_rcw_600.bin.swapped rcw_ff.bin
   else
+   ifeq ($(CONFIG_SUBTARGET_SOM314S),y)
+	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/som314s_rcw_600.bin.swapped rcw_ff.bin
+   else
 	@objcopy -F binary --pad-to=0x20000 --gap-fill=0xff board/Arcturus/ucls1012a/bin/som314_rcw_600.bin.swapped rcw_ff.bin
+   endif
   endif
  endif
 endif

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018-2022 Arcturus Networks, Inc.
+ * Copyright 2018-2023 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/ucls1012a/
  */
 
@@ -43,7 +43,7 @@ const uint8_t hx3_settings[5 + HX3_SETTINGS_SIZE] = { /* Arcturus default */
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Reserved */
 	0x04, 0x03, 0x09, 0x04, /* LangID = 0x0409 US English */
 	56, 0x03, /* [49] [50] Manufacturer string descriptor */
-	'2', 0x00, '0', 0x00, '2', 0x00, '2', 0x00,  /* [51] "2022 Arcturus Networks Inc." */
+	'2', 0x00, '0', 0x00, '2', 0x00, '3', 0x00,  /* [51] "2023 Arcturus Networks Inc." */
 	' ', 0x00, 'A', 0x00, 'r', 0x00, 'c', 0x00,
        	't', 0x00, 'u', 0x00, 'r', 0x00, 'u', 0x00,
        	's', 0x00, ' ', 0x00, 'N', 0x00, 'e', 0x00,
@@ -65,13 +65,22 @@ int hx3_hub_init(void) {
 	int length, index = 0, i2c_attempts = 0;
 	const int settings_size = sizeof(hx3_settings); /* cannot larger than 197 */
 	uint8_t *data = (uint8_t *)hx3_settings;
+	int rc;
+	struct udevice *dev = NULL;
+	uchar bus = 0;
 
+	i2c_get_chip_for_busnum(bus, HUB_ADDRESS, 2, &dev);
+	rc = i2c_get_chip_for_busnum(bus, HUB_ADDRESS, 2, &dev);
+	if (rc) {
+//		printf("failed to get USB HUB device at address 0x%x\n", HUB_ADDRESS);
+		return -1;
+	}
 	puts("USB: configuring hub....");
 
 	while(index <= settings_size - 1){
 		length = MIN(64, (settings_size - index));
 
-		if(i2c_write(HUB_ADDRESS, index, 2, data, length)) {
+		if (dm_i2c_write(dev, index, data, length)) {
 			if(i2c_attempts < 1)
 				printf("\nWARNING: I2C error during configuring USB hub slave. retrying...\n");
 			if(++i2c_attempts >= MAX_I2C_ATTEMPTS){
