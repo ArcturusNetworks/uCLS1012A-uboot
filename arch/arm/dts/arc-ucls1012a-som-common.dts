@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0+ OR X11
 /*
- * uCLS1012A_SOM2x60 board device tree source
+ * uCLS1012A System on Module common device tree
  *
- * Copyright 2022 Arcturus Networks, Inc.
+ * Copyright 2022,2023 Arcturus Networks, Inc.
  *
  */
 
@@ -11,7 +11,7 @@
 #include "fsl-ls1012a.dtsi"
 
 / {
-	model = "uCLS1012A";
+	model = "Arcturus uCLS1012A System-on-Module";
 
 	aliases {
 		spi0 = &qspi;
