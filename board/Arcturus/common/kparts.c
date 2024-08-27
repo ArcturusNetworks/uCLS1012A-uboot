@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2017-2022 Arcturus Networks, Inc.
+ * Copyright 2017-2024 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/
  *           by Oleksandr G Zhadan et al.
  */
@@ -50,6 +50,9 @@ const char pn[MAX_PARTS_NUM][4] = {
 #endif
 #ifdef ADDRESS_PARTE
 	ENVN(E)
+#endif
+#ifdef ADDRESS_PART4
+	ENVN(4)
 #endif
 };
 

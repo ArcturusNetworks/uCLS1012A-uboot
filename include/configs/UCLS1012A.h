@@ -124,23 +124,26 @@
 #define ADDRESS_PFE	0x20000
 #define SIZE_PFE	0x20000
 
-#if defined(CONFIG_SUBTARGET_SOM) || defined(CONFIG_SUBTARGET_SOM120)
+#if defined(CONFIG_SUBTARGET_SOM) || defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM314S)
 
 #undef CONFIG_EXTRA_ENV_SETTINGS
 
 #if defined(CONFIG_BOARD_T1)
-
 	#define ADDRESS_PART0 0x00A00000
 	#define SIZE_PART0    0x00A00000
 	#define ADDRESS_PART1 0x01400000
 	#define SIZE_PART1    0x02000000
 	#define ADDRESS_PART2 0x03400000
 #ifdef CONFIG_SPI_FLASH_128M
-	#define SIZE_PART2    0x04C00000
+	#define SIZE_PART2    0x04400000
+	#define ADDRESS_PART3 0x07800000
 #else
-	#define SIZE_PART2    0x00C00000
+	#define SIZE_PART2    0x00400000
+	#define ADDRESS_PART3 0x03800000
 #endif
-#define MAX_PARTS_NUM 5
+	#define SIZE_PART3    0x00800000
+
+#define MAX_PARTS_NUM 6
 
 #define CONFIG_EXTRA_ENV_SETTINGS				\
 	"bootcmd=run workingboot || run recoveryboot\0"		\
@@ -162,6 +165,8 @@
 	"part1size=" __stringify(SIZE_PART1) "\0"		\
 	"part2base=" __stringify(ADDRESS_PART2) "\0"		\
 	"part2size=" __stringify(SIZE_PART2) "\0"		\
+	"part3base=" __stringify(ADDRESS_PART3) "\0"		\
+	"part3size=" __stringify(SIZE_PART3) "\0"		\
 	"partBbase=" __stringify(ADDRESS_PARTB) "\0"		\
 	"partBsize=" __stringify(SIZE_PARTB) "\0"		\
 	"partEbase=" __stringify(ADDRESS_PARTE) "\0"		\
@@ -185,14 +190,14 @@
 		"pfe stop; "					\
 		"run kargs; "					\
 		"bootm $kernel_load\0"				\
-	"testrecovery=tftp $loadaddr $serverip:recovery.itb; "	\
+	"testrecovery=tftp $kernel_load $serverip:recovery.itb; "	\
 		"pfe stop; "					\
 		"run kargs; "					\
-		"bootm $loadaddr\0"				\
-	"testworking=tftp $loadaddr $serverip:working.itb; "	\
+		"bootm $kernel_load\0"				\
+	"testworking=tftp $kernel_load $serverip:working.itb; "	\
 		"pfe stop; "					\
 		"run kargs; "					\
-		"bootm $loadaddr\0"				\
+		"bootm $kernel_load\0"				\
 	"program0=sf probe 0:0;"				\
 		"sf erase $part0base +$part0size; "		\
 		"sf write $loadaddr $part0base $filesize; "	\
@@ -206,15 +211,18 @@
 	"program2=sf probe 0:0; "				\
 		"sf erase $part2base +$part2size; "		\
 		"sf write $loadaddr $part2base $filesize\0 "	\
-	"format2=sf probe 0:0; "				\
-		"sf erase $part2base +$part2size \0"		\
+	"program3=sf probe 0:0; "				\
+		"sf erase $part3base +$part3size; "		\
+		"sf write $loadaddr $part3base $filesize\0 "	\
+	"format3=sf probe 0:0; "				\
+		"sf erase $part3base +$part3size \0"		\
 	"program_firmware=sf probe 0:0; "			\
 		"sf erase $rcwbase +$filesize; "		\
 		"sf write $loadaddr $rcwbase $filesize\0"	\
 	"program_uboot=sf probe 0:0; "				\
 		"sf erase $partBbase +$partBsize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
-	"recoveryaddr=0x98000000\0"				\
+	"recoveryaddr=0x96000000\0"				\
 	"recoverybase=" __stringify(ADDRESS_PART0) "\0"		\
 	"recoverysize=" __stringify(SIZE_PART0) "\0"		\
 	"recoveryboot=pfe stop && "				\
@@ -226,7 +234,7 @@
 		"sf probe 0:0 && "				\
 		"sf erase $recoverybase +$recoverysize && "	\
 		"sf write $recoveryaddr $recoverybase $filesize\0"	\
-	"workingaddr=0x98000000\0"				\
+	"workingaddr=0x96000000\0"				\
 	"workingbase=" __stringify(ADDRESS_PART1) "\0"		\
 	"workingsize=" __stringify(SIZE_PART1) "\0"		\
 	"workingboot=pfe stop && "				\
@@ -264,7 +272,7 @@
 	#define ADDRESS_PART3 0x03800000
 	#define SIZE_PART3    0x00800000
 #endif
-#define MAX_PARTS_NUM 6
+#define MAX_PARTS_NUM 7
 
 #define CONFIG_EXTRA_ENV_SETTINGS				\
 	"verify=no\0"						\

@@ -43,8 +43,8 @@ config SUBTARGET_DONGLE
 endchoice
 
 config BOARD_T1
-	depends on SUBTARGET_SOM120
-	bool "SUBTARGET_SOM120 on T1 board"
+	depends on SUBTARGET_SOM120 || SUBTARGET_SOM314S
+	bool "T1 board support"
 	def_bool n
 
 config SPI_FLASH_128M

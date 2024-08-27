@@ -245,7 +245,11 @@ int last_stage_init(void)
 
 	ressurect_arc_info();
 	get_arc_info();
+#if CONFIG_SUBTARGET_SOM314S
+	set_kargs_parts((char *)"1550000.spi:");
+#else
 	set_kargs_parts((char *)"1550000.quadspi:");
+#endif
 
 #ifdef CONFIG_SUBTARGET_DONGLE
 	printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
