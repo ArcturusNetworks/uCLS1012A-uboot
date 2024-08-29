@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018-2023 Arcturus Networks, Inc.
+ * Copyright 2018-2024 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/ucls1012a/
  */
 

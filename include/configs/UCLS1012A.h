@@ -129,19 +129,18 @@
 #undef CONFIG_EXTRA_ENV_SETTINGS
 
 #if defined(CONFIG_BOARD_T1)
-	#define ADDRESS_PART0 0x00A00000
+	#define ADDRESS_PART0 0x00A00000  /* Recovery Image */
 	#define SIZE_PART0    0x00A00000
-	#define ADDRESS_PART1 0x01400000
+	#define ADDRESS_PART1 0x01400000  /* Working Image */
 	#define SIZE_PART1    0x02000000
 	#define ADDRESS_PART2 0x03400000
+	#define ADDRESS_PART2 0x00A00000
+	#define ADDRESS_PART3 0x03E00000
 #ifdef CONFIG_SPI_FLASH_128M
-	#define SIZE_PART2    0x04400000
-	#define ADDRESS_PART3 0x07800000
+	#define SIZE_PART3    0x04200000  /* JFFS NV */
 #else
-	#define SIZE_PART2    0x00400000
-	#define ADDRESS_PART3 0x03800000
+	#define SIZE_PART3    0x00200000
 #endif
-	#define SIZE_PART3    0x00800000
 
 #define MAX_PARTS_NUM 6
 
@@ -214,6 +213,8 @@
 	"program3=sf probe 0:0; "				\
 		"sf erase $part3base +$part3size; "		\
 		"sf write $loadaddr $part3base $filesize\0 "	\
+	"format2=sf probe 0:0; "				\
+		"sf erase $part2base +$part2size \0"		\
 	"format3=sf probe 0:0; "				\
 		"sf erase $part3base +$part3size \0"		\
 	"program_firmware=sf probe 0:0; "			\
@@ -222,7 +223,7 @@
 	"program_uboot=sf probe 0:0; "				\
 		"sf erase $partBbase +$partBsize; "		\
 		"sf write $loadaddr $partBbase $filesize\0"	\
-	"recoveryaddr=0x96000000\0"				\
+	"recoveryaddr=0x98000000\0"				\
 	"recoverybase=" __stringify(ADDRESS_PART0) "\0"		\
 	"recoverysize=" __stringify(SIZE_PART0) "\0"		\
 	"recoveryboot=pfe stop && "				\
@@ -234,7 +235,7 @@
 		"sf probe 0:0 && "				\
 		"sf erase $recoverybase +$recoverysize && "	\
 		"sf write $recoveryaddr $recoverybase $filesize\0"	\
-	"workingaddr=0x96000000\0"				\
+	"workingaddr=0x98000000\0"				\
 	"workingbase=" __stringify(ADDRESS_PART1) "\0"		\
 	"workingsize=" __stringify(SIZE_PART1) "\0"		\
 	"workingboot=pfe stop && "				\

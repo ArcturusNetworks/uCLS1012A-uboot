@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2018-2023 Arcturus Networks, Inc.
+ * Copyright 2018-2024 Arcturus Networks, Inc.
  *           https://www.arcturusnetworks.com/products/ucls1012a/
  */
 
@@ -167,7 +167,7 @@ int dram_init(void)
 		0x0000022a,	/* mpodtctrl */
 		0xa1390003,	/* mpzqhwctrl */
 	};
-#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60) || defined(CONFIG_SUBTARGET_DONGLE)
+#if defined(CONFIG_SUBTARGET_SOM120) || defined(CONFIG_SUBTARGET_SOM2X60) || defined(CONFIG_SUBTARGET_DONGLE) || defined(CONFIG_BOARD_T1)
 		mparam.mdctl = 0x04180000;
 		gd->ram_size = SYS_SDRAM_SIZE_512;
 #else
@@ -245,11 +245,11 @@ int last_stage_init(void)
 
 	ressurect_arc_info();
 	get_arc_info();
-#if CONFIG_SUBTARGET_SOM314S
-	set_kargs_parts((char *)"1550000.spi:");
-#else
-	set_kargs_parts((char *)"1550000.quadspi:");
-#endif
+
+	if (strcmp(CONFIG_LOCALVERSION, "v6") == 0)
+		set_kargs_parts((char *)"1550000.spi:");
+	else
+		set_kargs_parts((char *)"1550000.quadspi:");
 
 #ifdef CONFIG_SUBTARGET_DONGLE
 	printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
