@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * Copyright 2019-2023 Arcturus Networks Inc.
+ * Copyright 2019-2024 Arcturus Networks Inc.
  *           http://www.arcturusnetworks.com/products/ucls1012a/
  */
 
@@ -134,7 +134,7 @@
 	#define ADDRESS_PART1 0x01400000  /* Working Image */
 	#define SIZE_PART1    0x02000000
 	#define ADDRESS_PART2 0x03400000
-	#define ADDRESS_PART2 0x00A00000
+	#define SIZE_PART2    0x00A00000
 	#define ADDRESS_PART3 0x03E00000
 #ifdef CONFIG_SPI_FLASH_128M
 	#define SIZE_PART3    0x04200000  /* JFFS NV */
@@ -150,13 +150,11 @@
 	"loadaddr=0x98000000\0"					\
 	"kernel_addr=0x100000\0"				\
 	"kernel_start=0x1000000\0"				\
-	"kernel_load=0x96000000\0"				\
+	"kernel_load=0x98000000\0"				\
 	"kernel_size=" __stringify(SIZE_PART0) "\0"		\
 	"ethaddr=" __stringify(CONFIG_ETHADDR) "\0"		\
 	"eth1addr=" __stringify(CONFIG_ETH1ADDR) "\0"		\
-	"ethactr=pfe_eth0\0"					\
-	"initrd_high=0xffffffff\0"				\
-	"verify=no\0"						\
+	"ethactr=pfe_eth1\0"					\
 	"hwconfig=fsl_ddr:bank_intlv=auto\0"			\
 	"part0base=" __stringify(ADDRESS_PART0) "\0"		\
 	"part0size=" __stringify(SIZE_PART0) "\0"		\
@@ -170,8 +168,6 @@
 	"partBsize=" __stringify(SIZE_PARTB) "\0"		\
 	"partEbase=" __stringify(ADDRESS_PARTE) "\0"		\
 	"partEsize=" __stringify(SIZE_PARTE) "\0"		\
-	"image0size=" __stringify(SIZE_PART0) "\0"		\
-	"image1size=" __stringify(SIZE_PART1) "\0"		\
 	"rcwbase=" __stringify(ADDRESS_RCW) "\0"		\
 	"fdt_high=0xffffffffffffffff\0"				\
 	"initrd_high=0xffffffffffffffff\0"			\
@@ -205,7 +201,6 @@
 	"program1=sf probe 0:0;"				\
 		"sf erase $part1base +$part1size; "		\
 		"sf write $loadaddr $part1base $filesize; "	\
-		"setenv image1size $filesize; "			\
 		"saveenv\0"					\
 	"program2=sf probe 0:0; "				\
 		"sf erase $part2base +$part2size; "		\
@@ -253,10 +248,10 @@
 #else
 
 	#define ADDRESS_PART0 0x00A00000
-	#define SIZE_PART0    0x00800000
+	#define SIZE_PART0    0x00A00000
 #ifdef CONFIG_SPI_FLASH_128M
-	#define ADDRESS_PART1 0x01200000
-	#define SIZE_PART1    0x05580000
+	#define ADDRESS_PART1 0x01400000
+	#define SIZE_PART1    0x05380000
 	#define ADDRESS_PART4 0x06780000
 	#define SIZE_PART4    0x01000000
 	#define ADDRESS_PART2 0x07780000
@@ -264,8 +259,8 @@
 	#define ADDRESS_PART3 0x07800000
 	#define SIZE_PART3    0x00800000
 #else
-	#define ADDRESS_PART1 0x01200000
-	#define SIZE_PART1    0x01D80000
+	#define ADDRESS_PART1 0x01400000
+	#define SIZE_PART1    0x01B80000
 	#define ADDRESS_PART4 0x02F80000
 	#define SIZE_PART4    0x00800000
 	#define ADDRESS_PART2 0x03780000
@@ -280,12 +275,10 @@
 	"loadaddr=0x80100000\0"					\
 	"kernel_addr=0x100000\0"				\
 	"kernel_start=0x1000000\0"				\
-	"kernel_load=0x96000000\0"				\
+	"kernel_load=0x98000000\0"				\
 	"kernel_size=" __stringify(SIZE_PART0) "\0"		\
 	"ethaddr=" __stringify(CONFIG_ETHADDR) "\0"		\
 	"eth1addr=" __stringify(CONFIG_ETH1ADDR) "\0"		\
-	"initrd_high=0xffffffff\0"				\
-	"verify=no\0"						\
 	"hwconfig=fsl_ddr:bank_intlv=auto\0"			\
 	"part0base=" __stringify(ADDRESS_PART0) "\0"		\
 	"part0size=" __stringify(SIZE_PART0) "\0"		\
@@ -345,10 +338,10 @@
 #else
 #ifdef CONFIG_SUBTARGET_DONGLE
 	#define ADDRESS_PART0 0x00A00000
-	#define SIZE_PART0    0x00800000
+	#define SIZE_PART0    0x00A00000
 #ifdef CONFIG_SPI_FLASH_128M
-	#define ADDRESS_PART1 0x01200000
-	#define SIZE_PART1    0x05580000
+	#define ADDRESS_PART1 0x01400000
+	#define SIZE_PART1    0x05380000
 	#define ADDRESS_PART4 0x06780000
 	#define SIZE_PART4    0x01000000
 	#define ADDRESS_PART2 0x07780000
@@ -356,8 +349,8 @@
 	#define ADDRESS_PART3 0x07800000
 	#define SIZE_PART3    0x00800000
 #else
-	#define ADDRESS_PART1 0x01200000
-	#define SIZE_PART1    0x01D80000
+	#define ADDRESS_PART1 0x01400000
+	#define SIZE_PART1    0x01B80000
 	#define ADDRESS_PART4 0x02F80000
 	#define SIZE_PART4    0x00800000
 	#define ADDRESS_PART2 0x03780000
@@ -419,7 +412,6 @@
 	"program_fw=run $APRODUCT \0"				\
 	"ethaddr=" __stringify(CONFIG_ETHADDR) "\0"		\
 	"eth1addr=" __stringify(CONFIG_ETH1ADDR) "\0"		\
-	"initrd_high=0xffffffff\0"				\
 	"verify=no\0"						\
 	"hwconfig=fsl_ddr:bank_intlv=auto\0"			\
 	"loadaddr=0x80100000\0"					\
@@ -444,7 +436,7 @@
 	"initrd_high=0xffffffffffffffff\0"			\
 	"kargs_rootdev=root=/dev/mtdblock1\0"			\
 	"kargs_misc=rootfstype=cramfs,squashfs,jffs2\0"		\
-	"kernel_load=0x96000000\0"				\
+	"kernel_load=0x98000000\0"				\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
 		"$kargs_rootdev $kargs_misc $kargs_parts\0"	\
 	"uboot= " __stringify(CONFIG_UBOOTPATH) "\0"		\
@@ -597,10 +589,10 @@
 
 #else
 	#define ADDRESS_PART0 0x00A00000
-	#define SIZE_PART0    0x00800000
+	#define SIZE_PART0    0x00A00000
 #ifdef CONFIG_SPI_FLASH_128M
-	#define ADDRESS_PART1 0x01200000
-	#define SIZE_PART1    0x05580000
+	#define ADDRESS_PART1 0x01400000
+	#define SIZE_PART1    0x05380000
 	#define ADDRESS_PART4 0x06780000
 	#define SIZE_PART4    0x01000000
 	#define ADDRESS_PART2 0x07780000
@@ -608,8 +600,8 @@
 	#define ADDRESS_PART3 0x07800000
 	#define SIZE_PART3    0x00800000
 #else
-	#define ADDRESS_PART1 0x01200000
-	#define SIZE_PART1    0x01D80000
+	#define ADDRESS_PART1 0x01400000
+	#define SIZE_PART1    0x01B80000
 	#define ADDRESS_PART4 0x02F80000
 	#define SIZE_PART4    0x00800000
 	#define ADDRESS_PART2 0x03780000
@@ -623,11 +615,10 @@
 #define CONFIG_EXTRA_ENV_SETTINGS				\
 	"verify=no\0"						\
 	"loadaddr=0x80100000\0"					\
-	"kernel_load=0x96000000\0"				\
+	"kernel_load=0x98000000\0"				\
 	"kernel_size=" __stringify(SIZE_PART0) "\0"		\
 	"ethaddr=" __stringify(CONFIG_ETHADDR) "\0"		\
 	"eth1addr=" __stringify(CONFIG_ETH1ADDR) "\0"		\
-	"initrd_high=0xffffffff\0"				\
 	"hwconfig=fsl_ddr:bank_intlv=auto\0"			\
 	"part0base=" __stringify(ADDRESS_PART0) "\0"		\
 	"part0size=" __stringify(SIZE_PART0) "\0"		\

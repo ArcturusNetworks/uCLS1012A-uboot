@@ -49,7 +49,7 @@ const char pn[MAX_PARTS_NUM][4] = {
 	ENVN(B),
 #endif
 #ifdef ADDRESS_PARTE
-	ENVN(E)
+	ENVN(E),
 #endif
 #ifdef ADDRESS_PART4
 	ENVN(4)
