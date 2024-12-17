@@ -173,7 +173,7 @@
 	"initrd_high=0xffffffffffffffff\0"			\
 	"kargs_rootdev=root=/dev/mtdblock2\0"			\
 	"kargs_misc=rootfstype=cramfs,squashfs,jffs2\0"		\
-	"kargs_misc2=quiet lpj=250000\0"			\
+	"kargs_misc2=quiet lpj=250000 loglevel=0\0"		\
 	"kargs=setenv bootargs console=$console,$baudrate "	\
 		"$kargs_rootdev $kargs_misc $kargs_parts "	\
 		"$kargs_misc2\0"				\
@@ -243,6 +243,7 @@
 		"sf erase $workingbase +$workingsize && "	\
 		"sf write $workingaddr $workingbase $filesize\0"\
 	"silent=1\0"						\
+	"silent_linux=no\0"					\
 	"console=ttyS0,115200n8\0"
 
 #else
